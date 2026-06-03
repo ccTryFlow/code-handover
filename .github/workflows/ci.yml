@@ -34,6 +34,8 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: CodeHandover-Windows-Installer
-          path: release/CodeHandover-Setup-*.exe
+          name: CodeHandover-Windows-x64-Installers
+          path: |
+            release/CodeHandover-Setup-*-x64.exe
+            release/CodeHandover-Setup-*-x64.msi
           if-no-files-found: error

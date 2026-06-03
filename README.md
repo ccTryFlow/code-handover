@@ -61,7 +61,7 @@ npm run dev
 npm run electron:build
 ```
 
-本地 Windows 安装包会生成在 `release/` 目录下，默认命名为 `CodeHandover-Setup-版本号-x64.exe`。项目默认只构建 Windows x64 的 NSIS 安装向导：
+本地 Windows 安装包会生成在 `release/` 目录下，默认命名为 `CodeHandover-Setup-版本号-x64.exe` 和 `CodeHandover-Setup-版本号-x64.msi`。项目默认只构建 Windows x64 的 NSIS `.exe` 安装向导和 MSI 安装包：
 
 ```bash
 npm run electron:build:win
@@ -74,7 +74,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Release 只包含 Windows x64 安装器 exe 及其 blockmap。`release/win-unpacked/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
+Release 只包含 Windows x64 安装器 `.exe` 和 `.msi`。`release/win-unpacked/` 是 electron-builder 的解包调试目录，`.blockmap` 和 `latest.yml` 是更新元数据，当前都不作为正式下载包提供给用户。
 
 安装包会提供安装向导、桌面快捷方式和开始菜单快捷方式，安装完成后可直接启动 CodeHandover。
 
@@ -129,7 +129,7 @@ npm run check
 
 `npm run test:core` 会创建临时 Git 仓库，验证作者邮箱匹配、rename/delete 历史、增删行统计、风险文件识别、方法逻辑备注和 Markdown 导出。
 
-`npm run check` 会依次执行发布保护检查、前端类型检查、Electron 类型检查、核心链路测试、IPC 测试、AI Provider 测试和生产构建。发布保护检查会确认 DevTools 不会默认打开、网页环境不能直接当应用使用、Windows 发布目标仍是 NSIS 安装包。
+`npm run check` 会依次执行发布保护检查、前端类型检查、Electron 类型检查、核心链路测试、IPC 测试、AI Provider 测试和生产构建。发布保护检查会确认 DevTools 不会默认打开、网页环境不能直接当应用使用、Windows 发布目标只保留 x64 `.exe` 和 `.msi` 安装包。
 
 ## 当前边界
 
@@ -157,7 +157,7 @@ scripts/                核心链路、IPC 和 AI Provider 测试
 - 运行 `npm run check`。
 - 运行 `npm run electron:build` 生成安装包。
 - 如需发布 Windows 安装包，推送 `v*` tag 触发 GitHub Actions Release workflow。
-- GitHub Release 只上传 `release/` 下的 x64 安装器 `.exe`、对应 `.blockmap` 和 `latest.yml`，不要上传 `release/win-unpacked/`。
+- GitHub Release 只上传 `release/` 下的 x64 安装器 `.exe` 和 `.msi`，不要上传 `.blockmap`、`latest.yml` 或 `release/win-unpacked/`。
 - 用至少一个真实 Git 仓库验证“按作者生成个人文档”的主流程。
 - 检查生成文档中是否包含敏感配置、密钥或生产数据。
 - 如使用远程私有仓库，确认 `.git/config` 中的 `origin` 不包含 Token。

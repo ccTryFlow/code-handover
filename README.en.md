@@ -61,7 +61,7 @@ Development mode starts Vite and opens the Electron desktop app.
 npm run electron:build
 ```
 
-Local Windows installer artifacts are generated under `release/` and are named like `CodeHandover-Setup-version-x64.exe` by default. The project only builds the Windows x64 NSIS setup installer:
+Local Windows installer artifacts are generated under `release/` and are named like `CodeHandover-Setup-version-x64.exe` and `CodeHandover-Setup-version-x64.msi` by default. The project only builds the Windows x64 NSIS `.exe` setup wizard and MSI installer:
 
 ```bash
 npm run electron:build:win
@@ -74,7 +74,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release includes only the Windows x64 setup executable and its blockmap. `release/win-unpacked/` is the unpacked debug directory produced by electron-builder and should not be distributed as an official download.
+The release includes only the Windows x64 `.exe` and `.msi` installers. `release/win-unpacked/` is the unpacked debug directory produced by electron-builder, and `.blockmap` / `latest.yml` update metadata are not published as official downloads.
 
 The installer provides a setup wizard, desktop shortcut, Start Menu shortcut, and can launch CodeHandover after installation.
 
@@ -129,7 +129,7 @@ npm run check
 
 `npm run test:core` creates a temporary Git repository and verifies email-based author matching, rename/delete history, line statistics, risky-file detection, method notes, and Markdown export.
 
-`npm run check` runs release guards, frontend type checks, Electron type checks, core tests, IPC tests, AI provider tests, and the production build. Release guards verify that DevTools is not opened by default, browser-only usage is blocked, and the Windows release target remains an NSIS installer.
+`npm run check` runs release guards, frontend type checks, Electron type checks, core tests, IPC tests, AI provider tests, and the production build. Release guards verify that DevTools is not opened by default, browser-only usage is blocked, and the Windows release target only keeps x64 `.exe` and `.msi` installers.
 
 ## Current Limits
 
@@ -157,7 +157,7 @@ scripts/                 Core, IPC, and AI provider tests
 - Run `npm run check`.
 - Run `npm run electron:build` to create the installer.
 - Push a `v*` tag when you need a Windows GitHub Actions release build.
-- Upload only the x64 setup `.exe`, its `.blockmap`, and `latest.yml` from `release/` to GitHub Releases. Do not upload `release/win-unpacked/`.
+- Upload only the x64 setup `.exe` and `.msi` from `release/` to GitHub Releases. Do not upload `.blockmap`, `latest.yml`, or `release/win-unpacked/`.
 - Validate the per-author handover flow with at least one real Git repository.
 - Review generated documents for sensitive configuration, secrets, or production data.
 - For private remote repositories, confirm `.git/config` does not contain tokens in `origin`.
