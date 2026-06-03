@@ -1,0 +1,88 @@
+{
+  "name": "code-handover",
+  "version": "1.0.0",
+  "description": "CodeHandover - Git项目交接文档生成工具",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron:build": "vite build && electron-builder",
+    "test:ipc": "node scripts/test-ipc-payload.cjs",
+    "test:ai-provider": "node scripts/test-ai-provider.cjs",
+    "test:core": "node scripts/test-core.cjs",
+    "typecheck": "vue-tsc --noEmit",
+    "typecheck:electron": "tsc -p tsconfig.node.json --noEmit",
+    "check": "npm run typecheck && npm run typecheck:electron && npm run test:core && npm run test:ipc && npm run test:ai-provider && npm run build"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "element-plus": "^2.9.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "web-tree-sitter": "^0.26.9"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron-renderer": "^0.14.7",
+    "vue-tsc": "^2.2.0"
+  },
+  "build": {
+    "appId": "com.codehandover.app",
+    "productName": "CodeHandover",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/web-tree-sitter/web-tree-sitter.wasm",
+        "to": "tree-sitter/web-tree-sitter.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-php.wasm",
+        "to": "tree-sitter/tree-sitter-php.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-go.wasm",
+        "to": "tree-sitter/tree-sitter-go.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-java.wasm",
+        "to": "tree-sitter/tree-sitter-java.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-python.wasm",
+        "to": "tree-sitter/tree-sitter-python.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-javascript.wasm",
+        "to": "tree-sitter/tree-sitter-javascript.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-typescript.wasm",
+        "to": "tree-sitter/tree-sitter-typescript.wasm"
+      },
+      {
+        "from": "resources/tree-sitter/tree-sitter-tsx.wasm",
+        "to": "tree-sitter/tree-sitter-tsx.wasm"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
