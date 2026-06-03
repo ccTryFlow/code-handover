@@ -17,6 +17,11 @@
     "dev": "vite",
     "build": "vite build",
     "electron:build": "vite build && electron-builder --win nsis --publish never",
+    "electron:build:win": "npm run electron:build:win:x64 && npm run electron:build:win:ia32",
+    "electron:build:win:x64": "npm run build && electron-builder --win nsis msi portable --x64 --publish never",
+    "electron:build:win:ia32": "npm run build && electron-builder --win nsis msi portable --ia32 --publish never",
+    "electron:build:mac:x64": "npm run build && electron-builder --mac dmg zip --x64 --publish never",
+    "electron:build:mac:arm64": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
     "electron:dir": "vite build && electron-builder --dir",
     "test:ipc": "node scripts/test-ipc-payload.cjs",
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
@@ -94,14 +99,53 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "msi",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32"
           ]
         }
       ],
-      "artifactName": "${productName}-Setup-${version}.${ext}",
-      "icon": "public/favicon.ico"
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "icon": "public/favicon.ico",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-macOS-${version}-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
@@ -111,6 +155,12 @@
       "shortcutName": "CodeHandover",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
+    },
+    "msi": {
+      "artifactName": "${productName}-MSI-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
     }
   }
 }

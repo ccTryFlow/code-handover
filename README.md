@@ -61,11 +61,24 @@ npm run dev
 npm run electron:build
 ```
 
-Windows 发布产物会生成在 `release/` 目录下。对外发布时请上传 `CodeHandover-Setup-版本号.exe` 安装包；`release/win-unpacked/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
+本地 Windows 安装包会生成在 `release/` 目录下，默认命名为 `CodeHandover-Setup-版本号-x64.exe`。如需同时生成 Windows x64/ia32 的 NSIS、MSI 和 portable 包，可执行：
+
+```bash
+npm run electron:build:win
+```
+
+完整的 Windows 和 macOS 发布包由 GitHub Actions 生成。推送 `v*` tag 后，`.github/workflows/release.yml` 会自动构建未签名包并发布到 GitHub Releases：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Release 会包含 Windows NSIS/MSI/portable x64 与 ia32 包，以及 macOS DMG/ZIP x64 与 arm64 包。`release/win-unpacked/` 和 `release/mac/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
 
 安装包会提供安装向导、桌面快捷方式和开始菜单快捷方式，安装完成后可直接启动 CodeHandover。
 
-如果本机打包时出现 `Cannot create symbolic link` 或“客户端没有所需的特权”，请开启 Windows 开发者模式，或用管理员终端重新执行 `npm run electron:build`。GitHub Actions 会在每次推送 `main` 后自动构建并上传 Windows 安装包 artifact。
+如果本机打包时出现 `Cannot create symbolic link` 或“客户端没有所需的特权”，请开启 Windows 开发者模式，或用管理员终端重新执行 `npm run electron:build`。macOS 包需要在 macOS runner 上构建；Windows 本机不要直接尝试生成 DMG。
 
 ## 生成个人交接文档
 
@@ -134,8 +147,8 @@ scripts/                核心链路、IPC 和 AI Provider 测试
 - 确认 `.env`、Token、私有仓库地址和生成的交接文档没有被提交。
 - 运行 `npm run check`。
 - 运行 `npm run electron:build` 生成安装包。
-- 如本机权限不足导致安装包构建失败，可使用 GitHub Actions 生成的 `CodeHandover-Windows-Installer` artifact。
-- GitHub Release 只上传 `CodeHandover-Setup-版本号.exe`，不要上传 `release/win-unpacked/`。
+- 如需发布完整安装包，推送 `v*` tag 触发 GitHub Actions Release workflow。
+- GitHub Release 只上传 `release/` 下的 `.exe`、`.msi`、`.dmg`、`.zip`、`.blockmap` 和 `.yml` 产物，不要上传 `release/win-unpacked/` 或 `release/mac/`。
 - 用至少一个真实 Git 仓库验证“按作者生成个人文档”的主流程。
 - 检查生成文档中是否包含敏感配置、密钥或生产数据。
 - 如使用远程私有仓库，确认 `.git/config` 中的 `origin` 不包含 Token。

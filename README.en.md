@@ -61,11 +61,24 @@ Development mode starts Vite and opens the Electron desktop app.
 npm run electron:build
 ```
 
-Windows release artifacts are generated under `release/`. Publish the `CodeHandover-Setup-version.exe` installer for users. `release/win-unpacked/` is the unpacked debug directory produced by electron-builder and should not be distributed as the official download.
+Local Windows installer artifacts are generated under `release/` and are named like `CodeHandover-Setup-version-x64.exe` by default. To build Windows x64/ia32 NSIS, MSI, and portable packages together, run:
+
+```bash
+npm run electron:build:win
+```
+
+Full Windows and macOS release packages are built by GitHub Actions. Push a `v*` tag to run `.github/workflows/release.yml`, build unsigned packages, and publish them to GitHub Releases:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release includes Windows NSIS/MSI/portable packages for x64 and ia32, plus macOS DMG/ZIP packages for x64 and arm64. `release/win-unpacked/` and `release/mac/` are unpacked debug directories produced by electron-builder and should not be distributed as official downloads.
 
 The installer provides a setup wizard, desktop shortcut, Start Menu shortcut, and can launch CodeHandover after installation.
 
-If local packaging fails with `Cannot create symbolic link` or a missing privilege error, enable Windows Developer Mode or rerun `npm run electron:build` from an elevated terminal. GitHub Actions builds and uploads the Windows installer artifact after each push to `main`.
+If local packaging fails with `Cannot create symbolic link` or a missing privilege error, enable Windows Developer Mode or rerun `npm run electron:build` from an elevated terminal. macOS packages must be built on a macOS runner; do not try to build DMG artifacts directly from Windows.
 
 ## Generate A Personal Handover Document
 
@@ -134,8 +147,8 @@ scripts/                 Core, IPC, and AI provider tests
 - Ensure `.env`, tokens, private repository URLs, and generated handover documents are not committed.
 - Run `npm run check`.
 - Run `npm run electron:build` to create the installer.
-- If local packaging is blocked by Windows symlink privileges, use the `CodeHandover-Windows-Installer` artifact from GitHub Actions.
-- Upload only `CodeHandover-Setup-version.exe` to GitHub Releases. Do not upload `release/win-unpacked/`.
+- Push a `v*` tag when you need a complete GitHub Actions release build.
+- Upload only `.exe`, `.msi`, `.dmg`, `.zip`, `.blockmap`, and `.yml` artifacts from `release/` to GitHub Releases. Do not upload `release/win-unpacked/` or `release/mac/`.
 - Validate the per-author handover flow with at least one real Git repository.
 - Review generated documents for sensitive configuration, secrets, or production data.
 - For private remote repositories, confirm `.git/config` does not contain tokens in `origin`.
