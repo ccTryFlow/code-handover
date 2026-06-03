@@ -36,17 +36,9 @@ jobs:
         run: npm run check
 
   windows:
-    name: Windows ${{ matrix.arch }} packages
+    name: Windows x64 installer
     runs-on: windows-latest
     needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            script: electron:build:win:x64
-          - arch: ia32
-            script: electron:build:win:ia32
 
     steps:
       - name: Checkout
@@ -62,17 +54,16 @@ jobs:
         run: npm ci
 
       - name: Build unsigned Windows packages
-        run: npm run ${{ matrix.script }}
+        run: npm run electron:build:win:x64
 
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
-          name: CodeHandover-Windows-${{ matrix.arch }}
+          name: CodeHandover-Windows-x64
           path: |
-            release/*.exe
-            release/*.msi
-            release/*.blockmap
-            release/*.yml
+            release/CodeHandover-Setup-*-x64.exe
+            release/CodeHandover-Setup-*-x64.exe.blockmap
+            release/latest.yml
           if-no-files-found: error
 
   publish:
@@ -105,7 +96,6 @@ jobs:
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
           generate_release_notes: true
           files: |
-            release-artifacts/*.exe
-            release-artifacts/*.msi
-            release-artifacts/*.blockmap
-            release-artifacts/*.yml
+            release-artifacts/CodeHandover-Setup-*-x64.exe
+            release-artifacts/CodeHandover-Setup-*-x64.exe.blockmap
+            release-artifacts/latest.yml

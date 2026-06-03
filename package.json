@@ -16,10 +16,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "electron:build": "vite build && electron-builder --win nsis --publish never",
-    "electron:build:win": "npm run electron:build:win:x64 && npm run electron:build:win:ia32",
-    "electron:build:win:x64": "npm run build && electron-builder --win nsis msi portable --x64 --publish never",
-    "electron:build:win:ia32": "npm run build && electron-builder --win nsis msi portable --ia32 --publish never",
+    "electron:build": "vite build && electron-builder --win nsis --x64 --publish never",
+    "electron:build:win": "npm run electron:build:win:x64",
+    "electron:build:win:x64": "npm run build && electron-builder --win nsis --x64 --publish never",
     "electron:dir": "vite build && electron-builder --dir",
     "test:ipc": "node scripts/test-ipc-payload.cjs",
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
@@ -99,22 +98,7 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
-          ]
-        },
-        {
-          "target": "msi",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],
@@ -133,12 +117,6 @@
       "shortcutName": "CodeHandover",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
-    },
-    "msi": {
-      "artifactName": "${productName}-MSI-${version}-${arch}.${ext}"
-    },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
     }
   }
 }

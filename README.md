@@ -61,7 +61,7 @@ npm run dev
 npm run electron:build
 ```
 
-本地 Windows 安装包会生成在 `release/` 目录下，默认命名为 `CodeHandover-Setup-版本号-x64.exe`。如需同时生成 Windows x64/ia32 的 NSIS、MSI 和 portable 包，可执行：
+本地 Windows 安装包会生成在 `release/` 目录下，默认命名为 `CodeHandover-Setup-版本号-x64.exe`。项目默认只构建 Windows x64 的 NSIS 安装向导：
 
 ```bash
 npm run electron:build:win
@@ -74,7 +74,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Release 会包含 Windows NSIS/MSI/portable x64 与 ia32 包。`release/win-unpacked/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
+Release 只包含 Windows x64 安装器 exe 及其 blockmap。`release/win-unpacked/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
 
 安装包会提供安装向导、桌面快捷方式和开始菜单快捷方式，安装完成后可直接启动 CodeHandover。
 
@@ -157,7 +157,7 @@ scripts/                核心链路、IPC 和 AI Provider 测试
 - 运行 `npm run check`。
 - 运行 `npm run electron:build` 生成安装包。
 - 如需发布 Windows 安装包，推送 `v*` tag 触发 GitHub Actions Release workflow。
-- GitHub Release 只上传 `release/` 下的 `.exe`、`.msi`、`.blockmap` 和 `.yml` 产物，不要上传 `release/win-unpacked/`。
+- GitHub Release 只上传 `release/` 下的 x64 安装器 `.exe`、对应 `.blockmap` 和 `latest.yml`，不要上传 `release/win-unpacked/`。
 - 用至少一个真实 Git 仓库验证“按作者生成个人文档”的主流程。
 - 检查生成文档中是否包含敏感配置、密钥或生产数据。
 - 如使用远程私有仓库，确认 `.git/config` 中的 `origin` 不包含 Token。
