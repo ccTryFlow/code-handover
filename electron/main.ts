@@ -37,6 +37,10 @@ async function saveProviders(providers: any[]): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 
+function shouldOpenDevTools(): boolean {
+  return !app.isPackaged && process.env.CODEHANDOVER_OPEN_DEVTOOLS === '1';
+}
+
 function registerContextMenu(browserWindow: BrowserWindow): void {
   browserWindow.webContents.on('context-menu', (_event, params) => {
     const menuItems: MenuItemConstructorOptions[] = [];
@@ -87,7 +91,9 @@ function createWindow(): void {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
     mainWindow.loadURL(devServerUrl);
-    mainWindow.webContents.openDevTools();
+    if (shouldOpenDevTools()) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
