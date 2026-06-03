@@ -4,6 +4,34 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 const execFileAsync = promisify(execFile);
+const REMOTE_GIT_TIMEOUT_MS = 30000;
+const CLONE_GIT_TIMEOUT_MS = 10 * 60 * 1000;
+
+interface GitError extends Error {
+  code?: string | number | null;
+  signal?: NodeJS.Signals | null;
+  killed?: boolean;
+  stdout?: string | Buffer;
+  stderr?: string | Buffer;
+}
+
+function getGitEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: 'echo',
+    SSH_ASKPASS: 'echo',
+  };
+}
+
+async function runGit(args: string[], timeout: number) {
+  return execFileAsync('git', args, {
+    env: getGitEnv(),
+    timeout,
+    windowsHide: true,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
 
 function buildTokenHeaderArgs(url: string, token?: string): { args: string[]; basicToken: string } {
   if (!token || !/^https?:\/\//i.test(url)) {
@@ -38,20 +66,15 @@ export async function cloneRepo(
     }
     args.push(url, localPath);
 
-    await execFileAsync('git', args, {
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-      },
-    });
+    await runGit(args, CLONE_GIT_TIMEOUT_MS);
 
     if (token && /^https?:\/\//i.test(url)) {
-      await execFileAsync('git', ['-C', localPath, 'remote', 'set-url', 'origin', url]);
+      await runGit(['-C', localPath, 'remote', 'set-url', 'origin', url], REMOTE_GIT_TIMEOUT_MS);
     }
   } catch (error) {
-    const rawMessage = error instanceof Error ? error.message : String(error);
+    const rawMessage = formatGitError(error, CLONE_GIT_TIMEOUT_MS, '克隆仓库');
     const safeMessage = sanitizeCloneError(rawMessage, token, basicToken);
-    throw new Error(`Failed to clone repository: ${safeMessage}`);
+    throw new Error(`克隆仓库失败：${safeMessage}`);
   }
 }
 
@@ -68,12 +91,7 @@ export async function getRemoteBranches(url: string, token?: string): Promise<st
       url,
     ];
 
-    const { stdout } = await execFileAsync('git', args, {
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-      },
-    });
+    const { stdout } = await runGit(args, REMOTE_GIT_TIMEOUT_MS);
 
     return stdout
       .split('\n')
@@ -89,9 +107,9 @@ export async function getRemoteBranches(url: string, token?: string): Promise<st
         return a.localeCompare(b);
       });
   } catch (error) {
-    const rawMessage = error instanceof Error ? error.message : String(error);
+    const rawMessage = formatGitError(error, REMOTE_GIT_TIMEOUT_MS, '获取远程分支');
     const safeMessage = sanitizeCloneError(rawMessage, token, basicToken);
-    throw new Error(`Failed to get remote branches: ${safeMessage}`);
+    throw new Error(`获取远程分支失败：${safeMessage}`);
   }
 }
 
@@ -134,4 +152,35 @@ function sanitizeCloneError(message: string, token?: string, basicToken?: string
     safeMessage = safeMessage.split(basicToken).join('[redacted-token]');
   }
   return safeMessage;
+}
+
+function formatGitError(error: unknown, timeoutMs: number, action: string): string {
+  const gitError = error as GitError;
+  const stderr = bufferToString(gitError?.stderr).trim();
+  const stdout = bufferToString(gitError?.stdout).trim();
+  const message = error instanceof Error ? error.message : String(error);
+  const detail = stderr || stdout || message;
+
+  if (gitError?.killed || gitError?.signal === 'SIGTERM' || /timed out/i.test(message)) {
+    return `${action}超时（${Math.round(timeoutMs / 1000)} 秒）。请确认网络能访问远程仓库，或检查代理、GitHub 连接和访问令牌。`;
+  }
+
+  if (/Authentication failed|could not read Username|terminal prompts disabled|access denied|Permission denied/i.test(detail)) {
+    return `${action}认证失败。私有仓库请填写有效 Token，或确认当前 Git/SSH 凭据可用。${detail}`;
+  }
+
+  if (/Could not resolve host|Failed to connect|Connection timed out|Connection reset|unable to access/i.test(detail)) {
+    return `${action}网络连接失败。请确认当前网络、代理或 DNS 能访问远程仓库。${detail}`;
+  }
+
+  if (/Repository not found|not found/i.test(detail)) {
+    return `${action}失败，远程仓库不存在或当前账号没有访问权限。${detail}`;
+  }
+
+  return detail || `${action}失败`;
+}
+
+function bufferToString(value: string | Buffer | undefined): string {
+  if (!value) return '';
+  return Buffer.isBuffer(value) ? value.toString('utf8') : value;
 }

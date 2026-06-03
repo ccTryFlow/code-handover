@@ -192,6 +192,11 @@ function verifyFailureHandling() {
       remoteRepoPageSource.includes("throw new Error(result.error || '未知错误')"),
     '远程仓库页面应拦截 cloneRepo 返回的失败结果'
   );
+  assert(
+    remoteRepoPageSource.includes('branchFetchError') &&
+      remoteRepoPageSource.includes("ElMessage.error('获取分支失败')"),
+    '远程仓库页面应展示获取分支失败原因，避免下拉框一直 loading'
+  );
 }
 
 function verifyDocumentExports() {

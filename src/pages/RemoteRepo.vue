@@ -69,7 +69,7 @@
             <el-select
               v-model="form.branch"
               placeholder="选择分支"
-              :disabled="!form.repoUrl"
+              :disabled="!form.repoUrl || loadingBranches"
               :loading="loadingBranches"
             >
               <el-option v-for="branch in branches" :key="branch" :label="branch" :value="branch" />
@@ -84,6 +84,14 @@
               获取分支
             </el-button>
           </div>
+          <el-alert
+            v-if="branchFetchError"
+            class="branch-error"
+            :title="branchFetchError"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
         </el-form-item>
       </el-form>
 
@@ -138,6 +146,7 @@ const loadingBranches = ref(false)
 const cloning = ref(false)
 const cloneProgress = ref('')
 const clonePercentage = ref(0)
+const branchFetchError = ref('')
 
 const goBack = () => router.push('/')
 
@@ -162,6 +171,7 @@ const handleSelectDirectory = async () => {
 const handleUrlInput = () => {
   branches.value = []
   form.value.branch = ''
+  branchFetchError.value = ''
   refreshCloneTarget()
 }
 
@@ -178,15 +188,17 @@ const refreshCloneTarget = async () => {
 }
 
 const handleFetchBranches = async () => {
-  if (!form.value.repoUrl) {
+  const repoUrl = form.value.repoUrl.trim()
+  if (!repoUrl) {
     ElMessage.warning('请先输入仓库地址')
     return
   }
 
+  branchFetchError.value = ''
   loadingBranches.value = true
   try {
     const result = await electronAPI.getRemoteBranches(
-      form.value.repoUrl,
+      repoUrl,
       form.value.token || undefined
     )
     if (result.error) {
@@ -197,10 +209,12 @@ const handleFetchBranches = async () => {
       form.value.branch = result.currentBranch || branches.value[0]
       ElMessage.success(`已获取 ${branches.value.length} 个分支`)
     } else {
-      ElMessage.warning('未获取到远程分支，请确认仓库地址和访问权限')
+      branchFetchError.value = '未获取到远程分支，请确认仓库地址、访问权限或仓库是否为空。'
+      ElMessage.warning(branchFetchError.value)
     }
   } catch (error) {
-    ElMessage.error('获取分支失败，请检查仓库地址和 Token')
+    branchFetchError.value = (error as Error).message || '获取分支失败，请检查仓库地址、网络连接和 Token'
+    ElMessage.error('获取分支失败')
     console.error(error)
   } finally {
     loadingBranches.value = false
@@ -436,6 +450,12 @@ const handleCloneAndAnalyze = async () => {
 .progress-alert {
   margin-top: 18px;
   border-radius: 14px;
+}
+
+.branch-error {
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 12px;
 }
 
 .clone-target {

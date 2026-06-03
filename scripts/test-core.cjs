@@ -760,6 +760,8 @@ function verifyCloneTokenSafety() {
   assert(cloneSource.includes('remote\', \'set-url\''), 'clone 后应重置 origin URL，避免持久化凭据');
   assert(cloneSource.includes('sanitizeCloneError'), 'clone 错误信息应做 Token 脱敏');
   assert(cloneSource.includes('assertCloneTargetAvailable'), 'clone 前应检查目标目录，避免覆盖非空目录');
+  assert(cloneSource.includes('REMOTE_GIT_TIMEOUT_MS') && cloneSource.includes('timeout,'), '远程 Git 操作必须设置超时，避免获取分支一直 loading');
+  assert(cloneSource.includes('formatGitError'), '远程 Git 操作错误应转换为可读提示');
   assert(!cloneSource.includes('${token}@'), 'clone 不应把 Token 拼接进远程 URL');
 }
 
