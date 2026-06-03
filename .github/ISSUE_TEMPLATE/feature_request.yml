@@ -1,0 +1,46 @@
+name: Feature request / 功能建议
+description: Suggest an improvement or new capability for CodeHandover.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Clear use cases help us judge priority and implementation scope.
+
+        感谢提出建议。请尽量说明使用场景、当前痛点和期望效果。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 当前问题
+      description: What workflow or limitation are you trying to improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal / 期望方案
+      description: Describe the behavior or output you want.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 涉及范围
+      options:
+        - Git analysis
+        - Language/framework detection
+        - Handover document generation
+        - AI summary
+        - Export formats
+        - UI/UX
+        - Other
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / 替代方案
+      description: Any workaround or alternative design you have considered.
+    validations:
+      required: false
