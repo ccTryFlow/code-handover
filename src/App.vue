@@ -1,6 +1,21 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <div class="app-shell">
+    <div v-if="!isDesktopRuntime" class="desktop-required">
+      <div class="desktop-required-card">
+        <img src="/favicon.ico" alt="CodeHandover Logo" />
+        <p class="eyebrow">DESKTOP ONLY</p>
+        <h1>CodeHandover 是桌面应用专用</h1>
+        <p>
+          代码分析需要读取本地项目目录、执行 Git 命令并调用 Electron 主进程能力。
+          普通网页环境无法访问这些能力，因此不会开放在线网页使用。
+        </p>
+        <div class="desktop-required-actions">
+          <a href="https://github.com/ccTryFlow/code-handover" target="_blank" rel="noreferrer">查看 GitHub 仓库</a>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="app-shell">
       <div class="workspace">
         <aside class="sidebar">
         <nav class="nav-list">
@@ -58,23 +73,29 @@ import {
 } from '@element-plus/icons-vue'
 import { ElConfigProvider } from 'element-plus/es/components/config-provider/index.mjs'
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs'
-import electronAPI from './api/electron'
+import electronAPI, { isElectronRuntime } from './api/electron'
 
 const route = useRoute()
 const analyzedProjectCount = ref(0)
 const pageSurface = ref<HTMLElement | null>(null)
+const isDesktopRuntime = isElectronRuntime()
 
 const refreshAnalyzedProjectCount = async () => {
+  if (!isDesktopRuntime) return
   analyzedProjectCount.value = (await electronAPI.getRecentProjects()).length
 }
 
 onMounted(() => {
-  refreshAnalyzedProjectCount()
-  window.addEventListener('projects-updated', refreshAnalyzedProjectCount)
+  if (isDesktopRuntime) {
+    refreshAnalyzedProjectCount()
+    window.addEventListener('projects-updated', refreshAnalyzedProjectCount)
+  }
 })
 
 onUnmounted(() => {
-  window.removeEventListener('projects-updated', refreshAnalyzedProjectCount)
+  if (isDesktopRuntime) {
+    window.removeEventListener('projects-updated', refreshAnalyzedProjectCount)
+  }
 })
 
 watch(() => route.fullPath, async () => {
@@ -277,6 +298,74 @@ textarea {
 
 .el-card {
   border-radius: 12px;
+}
+
+.desktop-required {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 70% 10%, rgba(37, 99, 235, 0.14), transparent 32%),
+    linear-gradient(135deg, #f8fbff 0%, #eef3f8 100%);
+}
+
+.desktop-required-card {
+  width: min(560px, 100%);
+  padding: 42px;
+  border: 1px solid rgba(191, 219, 254, 0.86);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.12);
+  text-align: center;
+}
+
+.desktop-required-card img {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.18);
+}
+
+.desktop-required-card .eyebrow {
+  margin: 22px 0 8px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.desktop-required-card h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 30px;
+  line-height: 1.25;
+}
+
+.desktop-required-card p {
+  margin: 18px 0 0;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.desktop-required-actions {
+  margin-top: 28px;
+}
+
+.desktop-required-actions a {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #2563eb;
+  text-decoration: none;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.24);
 }
 
 @media (max-width: 980px) {

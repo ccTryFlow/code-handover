@@ -1,0 +1,45 @@
+const fs = require('fs');
+const path = require('path');
+
+const rootDir = path.resolve(__dirname, '..');
+
+function readFile(relativePath) {
+  return fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function verifyDevToolsGuard() {
+  const mainSource = readFile('electron/main.ts');
+  const devToolsLines = mainSource
+    .split(/\r?\n/)
+    .map((line, index) => ({ line, index: index + 1 }))
+    .filter(item => item.line.includes('openDevTools'));
+
+  assert(mainSource.includes('CODEHANDOVER_OPEN_DEVTOOLS'), 'DevTools 必须由显式环境变量控制');
+  assert(devToolsLines.length === 1, '发布前检查只允许保留一个受控的 openDevTools 调用');
+  assert(mainSource.includes('!app.isPackaged && process.env.CODEHANDOVER_OPEN_DEVTOOLS === \'1\''), '打包版本不能自动打开 DevTools');
+  assert(mainSource.includes('if (shouldOpenDevTools())'), 'openDevTools 必须放在 shouldOpenDevTools 守卫后');
+}
+
+function verifyWebRuntimeGuard() {
+  const appSource = readFile('src/App.vue');
+  const electronApiSource = readFile('src/api/electron.ts');
+
+  assert(electronApiSource.includes('export function isElectronRuntime'), '前端必须导出 Electron 运行环境检测');
+  assert(appSource.includes('!isDesktopRuntime'), 'App.vue 必须在非 Electron 环境显示拦截页');
+  assert(appSource.includes('CodeHandover 是桌面应用专用'), '网页环境提示必须说明桌面应用专用');
+  assert(appSource.includes('普通网页环境无法访问这些能力'), '网页环境提示必须说明 Git/本地文件能力不可用');
+}
+
+function main() {
+  verifyDevToolsGuard();
+  verifyWebRuntimeGuard();
+  console.log(JSON.stringify({ assertions: 'passed', checks: ['devtools', 'web-runtime'] }, null, 2));
+}
+
+main();

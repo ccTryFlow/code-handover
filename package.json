@@ -10,9 +10,10 @@
     "test:ipc": "node scripts/test-ipc-payload.cjs",
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
     "test:core": "node scripts/test-core.cjs",
+    "release:guard": "node scripts/check-release-guards.cjs",
     "typecheck": "vue-tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.node.json --noEmit",
-    "check": "npm run typecheck && npm run typecheck:electron && npm run test:core && npm run test:ipc && npm run test:ai-provider && npm run build"
+    "check": "npm run release:guard && npm run typecheck && npm run typecheck:electron && npm run test:core && npm run test:ipc && npm run test:ai-provider && npm run build"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

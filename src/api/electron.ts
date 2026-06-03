@@ -69,6 +69,10 @@ function toIpcPayload<T>(value: T): T {
 
 const bridge: ElectronAPI = (window as any).electronAPI || fallback;
 
+export function isElectronRuntime(): boolean {
+  return Boolean((window as any).electronAPI);
+}
+
 function notifyProjectsUpdated(): void {
   if (typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new Event('projects-updated'))
