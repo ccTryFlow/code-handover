@@ -36,10 +36,27 @@ function verifyWebRuntimeGuard() {
   assert(appSource.includes('普通网页环境无法访问这些能力'), '网页环境提示必须说明 Git/本地文件能力不可用');
 }
 
+function verifyInstallerConfig() {
+  const packageJson = JSON.parse(readFile('package.json'));
+  const buildConfig = packageJson.build || {};
+  const winTarget = buildConfig.win && buildConfig.win.target;
+  const targetText = JSON.stringify(winTarget || '');
+  const nsisConfig = buildConfig.nsis || {};
+
+  assert(packageJson.scripts['electron:build'].includes('electron-builder --win nsis'), 'electron:build 必须生成 Windows NSIS 安装包');
+  assert(targetText.includes('nsis'), 'Windows 发布目标必须包含 nsis 安装器');
+  assert(buildConfig.win.artifactName && buildConfig.win.artifactName.includes('Setup'), '安装包文件名必须明确包含 Setup');
+  assert(nsisConfig.oneClick === false, '安装器必须显示安装向导，不能静默一键安装');
+  assert(nsisConfig.createDesktopShortcut === true, '安装器必须创建桌面快捷方式');
+  assert(nsisConfig.createStartMenuShortcut === true, '安装器必须创建开始菜单快捷方式');
+  assert(nsisConfig.shortcutName === 'CodeHandover', '安装器快捷方式名称必须固定为 CodeHandover');
+}
+
 function main() {
   verifyDevToolsGuard();
   verifyWebRuntimeGuard();
-  console.log(JSON.stringify({ assertions: 'passed', checks: ['devtools', 'web-runtime'] }, null, 2));
+  verifyInstallerConfig();
+  console.log(JSON.stringify({ assertions: 'passed', checks: ['devtools', 'web-runtime', 'installer'] }, null, 2));
 }
 
 main();

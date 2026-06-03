@@ -2,11 +2,22 @@
   "name": "code-handover",
   "version": "1.0.0",
   "description": "CodeHandover - Git项目交接文档生成工具",
+  "author": "CodeHandover contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ccTryFlow/code-handover.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ccTryFlow/code-handover/issues"
+  },
+  "homepage": "https://github.com/ccTryFlow/code-handover#readme",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "electron:build": "vite build && electron-builder",
+    "electron:build": "vite build && electron-builder --win nsis",
+    "electron:dir": "vite build && electron-builder --dir",
     "test:ipc": "node scripts/test-ipc-payload.cjs",
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
     "test:core": "node scripts/test-core.cjs",
@@ -78,12 +89,27 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "icon": "public/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CodeHandover",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     }
   }
 }

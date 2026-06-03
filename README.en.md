@@ -55,6 +55,18 @@ npm run dev
 
 Development mode starts Vite and opens the Electron desktop app.
 
+## Installer Build
+
+```bash
+npm run electron:build
+```
+
+Windows release artifacts are generated under `release/`. Publish the `CodeHandover-Setup-version.exe` installer for users. `release/win-unpacked/` is the unpacked debug directory produced by electron-builder and should not be distributed as the official download.
+
+The installer provides a setup wizard, desktop shortcut, Start Menu shortcut, and can launch CodeHandover after installation.
+
+If local packaging fails with `Cannot create symbolic link` or a missing privilege error, enable Windows Developer Mode or rerun `npm run electron:build` from an elevated terminal. GitHub Actions builds and uploads the Windows installer artifact after each push to `main`.
+
 ## Generate A Personal Handover Document
 
 1. Select a local Git repository or enter a remote repository URL.
@@ -95,7 +107,7 @@ npm run check
 
 `npm run test:core` creates a temporary Git repository and verifies email-based author matching, rename/delete history, line statistics, risky-file detection, method notes, and Markdown export.
 
-`npm run check` runs frontend type checks, Electron type checks, core tests, IPC tests, AI provider tests, and the production build.
+`npm run check` runs release guards, frontend type checks, Electron type checks, core tests, IPC tests, AI provider tests, and the production build. Release guards verify that DevTools is not opened by default, browser-only usage is blocked, and the Windows release target remains an NSIS installer.
 
 ## Current Limits
 
@@ -121,6 +133,9 @@ scripts/                 Core, IPC, and AI provider tests
 
 - Ensure `.env`, tokens, private repository URLs, and generated handover documents are not committed.
 - Run `npm run check`.
+- Run `npm run electron:build` to create the installer.
+- If local packaging is blocked by Windows symlink privileges, use the `CodeHandover-Windows-Installer` artifact from GitHub Actions.
+- Upload only `CodeHandover-Setup-version.exe` to GitHub Releases. Do not upload `release/win-unpacked/`.
 - Validate the per-author handover flow with at least one real Git repository.
 - Review generated documents for sensitive configuration, secrets, or production data.
 - For private remote repositories, confirm `.git/config` does not contain tokens in `origin`.

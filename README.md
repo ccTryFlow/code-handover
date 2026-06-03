@@ -55,6 +55,18 @@ npm run dev
 
 开发模式会启动 Vite，并通过 Electron 打开桌面应用。
 
+## 正式安装包
+
+```bash
+npm run electron:build
+```
+
+Windows 发布产物会生成在 `release/` 目录下。对外发布时请上传 `CodeHandover-Setup-版本号.exe` 安装包；`release/win-unpacked/` 是 electron-builder 的解包调试目录，不建议作为正式下载包提供给用户。
+
+安装包会提供安装向导、桌面快捷方式和开始菜单快捷方式，安装完成后可直接启动 CodeHandover。
+
+如果本机打包时出现 `Cannot create symbolic link` 或“客户端没有所需的特权”，请开启 Windows 开发者模式，或用管理员终端重新执行 `npm run electron:build`。GitHub Actions 会在每次推送 `main` 后自动构建并上传 Windows 安装包 artifact。
+
 ## 生成个人交接文档
 
 1. 选择本地 Git 仓库，或输入远程仓库地址拉取代码。
@@ -95,7 +107,7 @@ npm run check
 
 `npm run test:core` 会创建临时 Git 仓库，验证作者邮箱匹配、rename/delete 历史、增删行统计、风险文件识别、方法逻辑备注和 Markdown 导出。
 
-`npm run check` 会依次执行前端类型检查、Electron 类型检查、核心链路测试、IPC 测试、AI Provider 测试和生产构建。
+`npm run check` 会依次执行发布保护检查、前端类型检查、Electron 类型检查、核心链路测试、IPC 测试、AI Provider 测试和生产构建。发布保护检查会确认 DevTools 不会默认打开、网页环境不能直接当应用使用、Windows 发布目标仍是 NSIS 安装包。
 
 ## 当前边界
 
@@ -121,6 +133,9 @@ scripts/                核心链路、IPC 和 AI Provider 测试
 
 - 确认 `.env`、Token、私有仓库地址和生成的交接文档没有被提交。
 - 运行 `npm run check`。
+- 运行 `npm run electron:build` 生成安装包。
+- 如本机权限不足导致安装包构建失败，可使用 GitHub Actions 生成的 `CodeHandover-Windows-Installer` artifact。
+- GitHub Release 只上传 `CodeHandover-Setup-版本号.exe`，不要上传 `release/win-unpacked/`。
 - 用至少一个真实 Git 仓库验证“按作者生成个人文档”的主流程。
 - 检查生成文档中是否包含敏感配置、密钥或生产数据。
 - 如使用远程私有仓库，确认 `.git/config` 中的 `origin` 不包含 Token。
