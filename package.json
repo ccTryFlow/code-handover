@@ -41,6 +41,7 @@
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.25.0",
+    "rcedit": "^4.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vite-plugin-electron": "^0.28.8",
@@ -51,6 +52,7 @@
     "appId": "com.codehandover.app",
     "productName": "CodeHandover",
     "publish": null,
+    "afterPack": "scripts/embed-windows-icon.cjs",
     "directories": {
       "output": "release"
     },

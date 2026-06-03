@@ -7,6 +7,10 @@ function readFile(relativePath) {
   return fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
 }
 
+function fileExists(relativePath) {
+  return fs.existsSync(path.join(rootDir, relativePath));
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -20,38 +24,45 @@ function verifyDevToolsGuard() {
     .map((line, index) => ({ line, index: index + 1 }))
     .filter(item => item.line.includes('openDevTools'));
 
-  assert(mainSource.includes('CODEHANDOVER_OPEN_DEVTOOLS'), 'DevTools 必须由显式环境变量控制');
-  assert(devToolsLines.length === 1, '发布前检查只允许保留一个受控的 openDevTools 调用');
-  assert(mainSource.includes('!app.isPackaged && process.env.CODEHANDOVER_OPEN_DEVTOOLS === \'1\''), '打包版本不能自动打开 DevTools');
-  assert(mainSource.includes('if (shouldOpenDevTools())'), 'openDevTools 必须放在 shouldOpenDevTools 守卫后');
+  assert(mainSource.includes('CODEHANDOVER_OPEN_DEVTOOLS'), 'DevTools must be controlled by an explicit environment variable');
+  assert(devToolsLines.length === 1, 'Release guard allows only one guarded openDevTools call');
+  assert(mainSource.includes('!app.isPackaged && process.env.CODEHANDOVER_OPEN_DEVTOOLS === \'1\''), 'Packaged builds must not open DevTools automatically');
+  assert(mainSource.includes('if (shouldOpenDevTools())'), 'openDevTools must stay behind shouldOpenDevTools');
 }
 
 function verifyWebRuntimeGuard() {
   const appSource = readFile('src/App.vue');
   const electronApiSource = readFile('src/api/electron.ts');
 
-  assert(electronApiSource.includes('export function isElectronRuntime'), '前端必须导出 Electron 运行环境检测');
-  assert(appSource.includes('!isDesktopRuntime'), 'App.vue 必须在非 Electron 环境显示拦截页');
-  assert(appSource.includes('CodeHandover 是桌面应用专用'), '网页环境提示必须说明桌面应用专用');
-  assert(appSource.includes('普通网页环境无法访问这些能力'), '网页环境提示必须说明 Git/本地文件能力不可用');
+  assert(electronApiSource.includes('export function isElectronRuntime'), 'Renderer API must export Electron runtime detection');
+  assert(appSource.includes('!isDesktopRuntime'), 'App.vue must show the web-runtime blocker outside Electron');
+  assert(appSource.includes('desktop-required'), 'App.vue must keep the desktop-only fallback surface');
+  assert(appSource.includes('https://github.com/ccTryFlow/code-handover'), 'The desktop-only fallback must keep a repository link');
 }
 
 function verifyInstallerConfig() {
   const packageJson = JSON.parse(readFile('package.json'));
   const buildConfig = packageJson.build || {};
-  const winTarget = buildConfig.win && buildConfig.win.target;
+  const winConfig = buildConfig.win || {};
+  const winTarget = winConfig.target;
   const targetText = JSON.stringify(winTarget || '');
   const nsisConfig = buildConfig.nsis || {};
 
-  assert(packageJson.scripts['electron:build'].includes('electron-builder --win nsis'), 'electron:build 必须生成 Windows NSIS 安装包');
-  assert(packageJson.scripts['electron:build'].includes('--publish never'), 'electron:build 只能生成安装包，不能在 CI 中自动发布 GitHub Release');
-  assert(buildConfig.publish === null, 'electron-builder publish 必须显式关闭，安装包由 GitHub Actions artifact 管理');
-  assert(targetText.includes('nsis'), 'Windows 发布目标必须包含 nsis 安装器');
-  assert(buildConfig.win.artifactName && buildConfig.win.artifactName.includes('Setup'), '安装包文件名必须明确包含 Setup');
-  assert(nsisConfig.oneClick === false, '安装器必须显示安装向导，不能静默一键安装');
-  assert(nsisConfig.createDesktopShortcut === true, '安装器必须创建桌面快捷方式');
-  assert(nsisConfig.createStartMenuShortcut === true, '安装器必须创建开始菜单快捷方式');
-  assert(nsisConfig.shortcutName === 'CodeHandover', '安装器快捷方式名称必须固定为 CodeHandover');
+  assert(packageJson.scripts['electron:build'].includes('electron-builder --win nsis'), 'electron:build must generate a Windows NSIS installer');
+  assert(packageJson.scripts['electron:build'].includes('--publish never'), 'electron:build must not publish GitHub Releases directly');
+  assert(buildConfig.publish === null, 'electron-builder publish must stay disabled; GitHub Actions owns release publishing');
+  assert(buildConfig.afterPack === 'scripts/embed-windows-icon.cjs', 'Windows builds must run the icon embedding afterPack hook');
+  assert(fileExists(buildConfig.afterPack), 'The Windows icon embedding afterPack hook must exist');
+  assert(targetText.includes('nsis'), 'Windows release targets must include the NSIS installer');
+  assert(winConfig.artifactName && winConfig.artifactName.includes('Setup'), 'Installer artifact names must include Setup');
+  assert(winConfig.icon === 'public/favicon.ico', 'Windows installer must use the checked-in CodeHandover icon');
+  assert(fileExists(winConfig.icon), 'Windows icon file must exist before packaging');
+  assert(winConfig.signAndEditExecutable === false, 'Built-in Windows signing must stay disabled for unsigned personal releases');
+  assert(packageJson.devDependencies && packageJson.devDependencies.rcedit, 'Windows icon embedding must keep rcedit as a dev dependency');
+  assert(nsisConfig.oneClick === false, 'Installer must show the setup wizard instead of silent one-click install');
+  assert(nsisConfig.createDesktopShortcut === true, 'Installer must create a desktop shortcut');
+  assert(nsisConfig.createStartMenuShortcut === true, 'Installer must create a Start Menu shortcut');
+  assert(nsisConfig.shortcutName === 'CodeHandover', 'Installer shortcut name must stay CodeHandover');
 }
 
 function main() {
