@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "electron:build": "vite build && electron-builder --win nsis",
+    "electron:build": "vite build && electron-builder --win nsis --publish never",
     "electron:dir": "vite build && electron-builder --dir",
     "test:ipc": "node scripts/test-ipc-payload.cjs",
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
@@ -47,6 +47,7 @@
   "build": {
     "appId": "com.codehandover.app",
     "productName": "CodeHandover",
+    "publish": null,
     "directories": {
       "output": "release"
     },

@@ -44,6 +44,8 @@ function verifyInstallerConfig() {
   const nsisConfig = buildConfig.nsis || {};
 
   assert(packageJson.scripts['electron:build'].includes('electron-builder --win nsis'), 'electron:build 必须生成 Windows NSIS 安装包');
+  assert(packageJson.scripts['electron:build'].includes('--publish never'), 'electron:build 只能生成安装包，不能在 CI 中自动发布 GitHub Release');
+  assert(buildConfig.publish === null, 'electron-builder publish 必须显式关闭，安装包由 GitHub Actions artifact 管理');
   assert(targetText.includes('nsis'), 'Windows 发布目标必须包含 nsis 安装器');
   assert(buildConfig.win.artifactName && buildConfig.win.artifactName.includes('Setup'), '安装包文件名必须明确包含 Setup');
   assert(nsisConfig.oneClick === false, '安装器必须显示安装向导，不能静默一键安装');
