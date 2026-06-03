@@ -1,8 +1,22 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+const CLI_TIMEOUT_MS = 120000;
+const CLI_DETECTION_TIMEOUT_MS = 20000;
+const CLI_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+const CLI_READINESS_PROMPT = '只输出 OK，不要输出其他内容。';
+
+export interface CliRunResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  timedOut: boolean;
+}
 
 // ============================================================================
 // AI Provider Types
@@ -17,6 +31,18 @@ export interface AICliProvider {
   cliCommand: string;  // e.g. "claude", "codex", "gemini"
   enabled: boolean;
 }
+
+export type AICliProviderStatusType = 'ready' | 'missing' | 'auth-required' | 'error';
+
+export interface AICliProviderStatus {
+  available: boolean;
+  ready: boolean;
+  status: AICliProviderStatusType;
+  message: string;
+  version?: string;
+}
+
+export type AICliProviderDetection = AICliProvider & AICliProviderStatus;
 
 export interface AICustomProvider {
   type: 'custom';
@@ -181,16 +207,262 @@ export const BUILTIN_CLI_PROVIDERS: AICliProvider[] = [
 // ============================================================================
 
 export async function checkCliAvailable(cliCommand: string): Promise<boolean> {
+  const version = await getCliVersion(cliCommand);
+  return Boolean(version);
+}
+
+async function getCliVersion(cliCommand: string): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync(cliCommand, ['--version'], {
       timeout: 5000,
       windowsHide: true,
       shell: true,
     });
-    return !!stdout;
+    const cleaned = cleanupCliOutput(stdout);
+    return cleaned || undefined;
   } catch (_e) {
-    return false;
+    return undefined;
   }
+}
+
+async function runCliWithInput(
+  command: string,
+  args: string[],
+  input: string,
+  timeout: number = CLI_TIMEOUT_MS
+): Promise<CliRunResult> {
+  return new Promise(resolve => {
+    const child = spawn(command, args, {
+      shell: true,
+      windowsHide: true,
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let outputBytes = 0;
+    let settled = false;
+    let timedOut = false;
+
+    const finish = (exitCode: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        exitCode,
+        timedOut,
+      });
+    };
+
+    const collect = (chunks: Buffer[], chunk: Buffer) => {
+      outputBytes += chunk.length;
+      chunks.push(chunk);
+      if (outputBytes > CLI_MAX_OUTPUT_BYTES) {
+        child.kill();
+      }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+      finish(null);
+    }, timeout);
+
+    child.stdout.on('data', chunk => collect(stdoutChunks, Buffer.from(chunk)));
+    child.stderr.on('data', chunk => collect(stderrChunks, Buffer.from(chunk)));
+    child.on('error', error => {
+      stderrChunks.push(Buffer.from(error.message));
+      finish(null);
+    });
+    child.on('close', code => finish(code));
+    child.stdin.end(input, 'utf8');
+  });
+}
+
+function buildCliFailure(provider: string, result: CliRunResult, fallback?: string): AISummaryResponse {
+  const status = classifyCliFailure(provider.toLowerCase(), result);
+  const detail = [
+    result.timedOut ? '执行超时' : '',
+    result.exitCode !== null && result.exitCode !== 0 ? `退出码 ${result.exitCode}` : '',
+    cleanupCliOutput(result.stderr || result.stdout || fallback || '').slice(0, 800),
+  ].filter(Boolean).join('；');
+  const authHint = status === 'auth-required'
+    ? '需要先登录或配置认证；'
+    : '';
+
+  return {
+    success: false,
+    content: '',
+    error: `${provider} CLI 摘要生成失败：${authHint}${detail || '未返回有效内容'}`,
+    provider,
+  };
+}
+
+function buildCliSuccess(provider: string, model: string, content: string): AISummaryResponse {
+  const cleaned = cleanupCliOutput(content);
+  if (!cleaned) {
+    return {
+      success: false,
+      content: '',
+      error: `${provider} CLI 已执行，但没有返回摘要内容`,
+      provider,
+      model,
+    };
+  }
+
+  return {
+    success: true,
+    content: cleaned,
+    provider,
+    model,
+  };
+}
+
+function cleanupCliOutput(content: string): string {
+  return content
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
+export function classifyCliFailure(provider: string, result: CliRunResult): AICliProviderStatusType {
+  const output = cleanupCliOutput(`${result.stderr}\n${result.stdout}`).toLowerCase();
+  if (
+    /authentication|authenticating|login|log in|not logged in|unauthorized|api key|api-key|token|credentials/.test(output)
+    || /opening authentication page|authentication cancelled|sign in|sign-in/.test(output)
+    || /未登录|登录|认证|鉴权|凭据|密钥/.test(output)
+  ) {
+    return 'auth-required';
+  }
+
+  if (provider.includes('gemini') && /oauth|google account|browser/.test(output)) {
+    return 'auth-required';
+  }
+
+  return 'error';
+}
+
+function buildCliStatusMessage(provider: AICliProvider, status: AICliProviderStatusType, detail?: string): string {
+  if (status === 'ready') return `${provider.name} 已安装并通过非交互生成检测`;
+  if (status === 'missing') return `未检测到 ${provider.cliCommand} 命令，请先安装 ${provider.name}`;
+  if (status === 'auth-required') {
+    return `${provider.name} 已安装，但未完成登录或认证；请先在终端运行 ${provider.cliCommand} 完成登录后再使用`;
+  }
+
+  return `${provider.name} 已安装，但非交互生成检测失败${detail ? `：${detail}` : ''}`;
+}
+
+function statusFromCliFailure(provider: AICliProvider, result: CliRunResult, version?: string): AICliProviderDetection {
+  const status = classifyCliFailure(provider.cliCommand, result);
+  const detail = [
+    result.timedOut ? '执行超时' : '',
+    result.exitCode !== null && result.exitCode !== 0 ? `退出码 ${result.exitCode}` : '',
+    cleanupCliOutput(result.stderr || result.stdout).slice(0, 240),
+  ].filter(Boolean).join('；');
+
+  return {
+    ...provider,
+    available: true,
+    ready: false,
+    status,
+    message: buildCliStatusMessage(provider, status, detail),
+    version,
+  };
+}
+
+function statusFromCliSuccess(
+  provider: AICliProvider,
+  result: CliRunResult,
+  content: string,
+  version?: string
+): AICliProviderDetection {
+  const cleaned = cleanupCliOutput(content || result.stdout);
+  if (!cleaned) {
+    return {
+      ...provider,
+      available: true,
+      ready: false,
+      status: 'error',
+      message: buildCliStatusMessage(provider, 'error', '命令已执行，但没有返回内容'),
+      version,
+    };
+  }
+
+  return {
+    ...provider,
+    available: true,
+    ready: true,
+    status: 'ready',
+    message: buildCliStatusMessage(provider, 'ready'),
+    version,
+  };
+}
+
+async function checkCliReady(provider: AICliProvider, version: string): Promise<AICliProviderDetection> {
+  if (provider.cliCommand === 'claude') {
+    const result = await runCliWithInput(
+      'claude',
+      ['-p', '--output-format', 'text', '--no-session-persistence'],
+      CLI_READINESS_PROMPT,
+      CLI_DETECTION_TIMEOUT_MS
+    );
+    if (result.timedOut || result.exitCode !== 0) return statusFromCliFailure(provider, result, version);
+    return statusFromCliSuccess(provider, result, result.stdout, version);
+  }
+
+  if (provider.cliCommand === 'codex') {
+    const outputPath = path.join(os.tmpdir(), `codehandover-codex-detect-${randomUUID()}.txt`);
+    try {
+      const result = await runCliWithInput(
+        'codex',
+        [
+          'exec',
+          '--skip-git-repo-check',
+          '--sandbox',
+          'read-only',
+          '--output-last-message',
+          outputPath,
+          '-',
+        ],
+        CLI_READINESS_PROMPT,
+        CLI_DETECTION_TIMEOUT_MS
+      );
+      if (result.timedOut || result.exitCode !== 0) return statusFromCliFailure(provider, result, version);
+
+      const fileContent = await fs.readFile(outputPath, 'utf8').catch(() => '');
+      return statusFromCliSuccess(provider, result, fileContent || result.stdout, version);
+    } finally {
+      await fs.rm(outputPath, { force: true }).catch(() => undefined);
+    }
+  }
+
+  if (provider.cliCommand === 'gemini') {
+    const result = await runCliWithInput(
+      'gemini',
+      [
+        '-p',
+        CLI_READINESS_PROMPT,
+        '--output-format',
+        'text',
+        '--approval-mode',
+        'yolo',
+        '--skip-trust',
+      ],
+      '',
+      CLI_DETECTION_TIMEOUT_MS
+    );
+    if (result.timedOut || result.exitCode !== 0) return statusFromCliFailure(provider, result, version);
+    return statusFromCliSuccess(provider, result, result.stdout, version);
+  }
+
+  const result = await runCliWithInput(
+    provider.cliCommand,
+    ['--prompt', CLI_READINESS_PROMPT],
+    '',
+    CLI_DETECTION_TIMEOUT_MS
+  );
+  if (result.timedOut || result.exitCode !== 0) return statusFromCliFailure(provider, result, version);
+  return statusFromCliSuccess(provider, result, result.stdout, version);
 }
 
 export async function executeCliProvider(
@@ -209,18 +481,13 @@ export async function executeCliProvider(
       return await executeGeminiCli(fullPrompt);
     }
 
-    // Generic CLI fallback - pipe prompt via stdin
     const { stdout } = await execFileAsync(
       provider.cliCommand,
       ['--prompt', fullPrompt],
       { timeout: 120000, maxBuffer: 1024 * 1024, windowsHide: true, shell: true }
     );
 
-    return {
-      success: true,
-      content: stdout.trim(),
-      provider: provider.name,
-    };
+    return buildCliSuccess(provider.name, provider.cliCommand, stdout);
   } catch (error) {
     return {
       success: false,
@@ -233,38 +500,62 @@ export async function executeCliProvider(
 
 async function executeClaudeCli(prompt: string): Promise<AISummaryResponse> {
   try {
-    const { stdout } = await execFileAsync(
+    const result = await runCliWithInput(
       'claude',
-      ['-p', prompt, '--output-format', 'text'],
-      { timeout: 120000, maxBuffer: 1024 * 1024, windowsHide: true, shell: true }
+      ['-p', '--output-format', 'text', '--no-session-persistence'],
+      prompt
     );
-    return { success: true, content: stdout.trim(), provider: 'Claude Code', model: 'claude' };
+    if (result.timedOut || result.exitCode !== 0) return buildCliFailure('Claude Code', result);
+    return buildCliSuccess('Claude Code', 'claude', result.stdout);
   } catch (error) {
     return { success: false, content: '', error: (error as Error).message, provider: 'Claude Code' };
   }
 }
 
 async function executeCodexCli(prompt: string): Promise<AISummaryResponse> {
+  const outputPath = path.join(os.tmpdir(), `codehandover-codex-${randomUUID()}.txt`);
   try {
-    const { stdout } = await execFileAsync(
+    const result = await runCliWithInput(
       'codex',
-      ['-q', prompt],
-      { timeout: 120000, maxBuffer: 1024 * 1024, windowsHide: true, shell: true }
+      [
+        'exec',
+        '--skip-git-repo-check',
+        '--sandbox',
+        'read-only',
+        '--output-last-message',
+        outputPath,
+        '-',
+      ],
+      prompt
     );
-    return { success: true, content: stdout.trim(), provider: 'OpenAI Codex', model: 'codex' };
+    if (result.timedOut || result.exitCode !== 0) return buildCliFailure('OpenAI Codex', result);
+
+    const fileContent = await fs.readFile(outputPath, 'utf8').catch(() => '');
+    return buildCliSuccess('OpenAI Codex', 'codex', fileContent || result.stdout);
   } catch (error) {
     return { success: false, content: '', error: (error as Error).message, provider: 'OpenAI Codex' };
+  } finally {
+    await fs.rm(outputPath, { force: true }).catch(() => undefined);
   }
 }
 
 async function executeGeminiCli(prompt: string): Promise<AISummaryResponse> {
   try {
-    const { stdout } = await execFileAsync(
+    const result = await runCliWithInput(
       'gemini',
-      ['-p', prompt],
-      { timeout: 120000, maxBuffer: 1024 * 1024, windowsHide: true, shell: true }
+      [
+        '-p',
+        '请根据标准输入生成代码交接摘要。',
+        '--output-format',
+        'text',
+        '--approval-mode',
+        'yolo',
+        '--skip-trust',
+      ],
+      prompt
     );
-    return { success: true, content: stdout.trim(), provider: 'Google Gemini', model: 'gemini' };
+    if (result.timedOut || result.exitCode !== 0) return buildCliFailure('Google Gemini', result);
+    return buildCliSuccess('Google Gemini', 'gemini', result.stdout);
   } catch (error) {
     return { success: false, content: '', error: (error as Error).message, provider: 'Google Gemini' };
   }
@@ -434,11 +725,37 @@ export async function executeAI(request: AISummaryRequest): Promise<AISummaryRes
 // Detect available CLI tools
 // ============================================================================
 
-export async function detectAvailableCliProviders(): Promise<Array<AICliProvider & { available: boolean }>> {
-  const results = [];
+export async function detectAvailableCliProviders(): Promise<AICliProviderDetection[]> {
+  const results: AICliProviderDetection[] = [];
   for (const provider of BUILTIN_CLI_PROVIDERS) {
-    const available = await checkCliAvailable(provider.cliCommand);
-    results.push({ ...provider, available });
+    const version = await getCliVersion(provider.cliCommand);
+    if (!version) {
+      results.push({
+        ...provider,
+        available: false,
+        ready: false,
+        status: 'missing',
+        message: buildCliStatusMessage(provider, 'missing'),
+      });
+      continue;
+    }
+
+    try {
+      results.push(await checkCliReady(provider, version));
+    } catch (error) {
+      results.push({
+        ...provider,
+        available: true,
+        ready: false,
+        status: 'error',
+        message: buildCliStatusMessage(
+          provider,
+          'error',
+          error instanceof Error ? error.message : String(error)
+        ),
+        version,
+      });
+    }
   }
   return results;
 }

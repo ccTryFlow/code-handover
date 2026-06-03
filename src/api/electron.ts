@@ -1,5 +1,18 @@
 import type { AnalyzeProgress } from '@electron/types'
 
+export type CliProviderStatus = 'ready' | 'missing' | 'auth-required' | 'error'
+
+export interface CliProviderDetection {
+  type: string;
+  name: string;
+  cliCommand: string;
+  available: boolean;
+  ready: boolean;
+  status: CliProviderStatus;
+  message: string;
+  version?: string;
+}
+
 interface ElectronAPI {
   selectDirectory: () => Promise<string | null>;
   checkGitRepo: (localPath: string) => Promise<boolean>;
@@ -23,7 +36,7 @@ interface ElectronAPI {
   removeRecentProject: (projectPath: string) => Promise<boolean>;
   getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => Promise<string>;
   cloneRepo: (url: string, localPath: string, branch?: string, token?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-  detectCliProviders: () => Promise<Array<{ type: string; name: string; cliCommand: string; available: boolean }>>;
+  detectCliProviders: (force?: boolean) => Promise<CliProviderDetection[]>;
   loadAiProviders: () => Promise<any[]>;
   saveAiProviders: (providers: any[]) => Promise<boolean>;
   testAiProvider: (provider: any) => Promise<{ success: boolean; content: string; error?: string }>;
@@ -68,6 +81,8 @@ function toIpcPayload<T>(value: T): T {
 }
 
 const bridge: ElectronAPI = (window as any).electronAPI || fallback;
+let cliProvidersCache: CliProviderDetection[] | null = null
+let cliProvidersRequest: Promise<CliProviderDetection[]> | null = null
 
 export function isElectronRuntime(): boolean {
   return Boolean((window as any).electronAPI);
@@ -77,6 +92,10 @@ function notifyProjectsUpdated(): void {
   if (typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new Event('projects-updated'))
   }
+}
+
+function cloneCliProviders(providers: CliProviderDetection[]): CliProviderDetection[] {
+  return providers.map(provider => ({ ...provider }))
 }
 
 export const electronAPI: ElectronAPI = {
@@ -107,7 +126,29 @@ export const electronAPI: ElectronAPI = {
   getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => bridge.getDefaultCloneDirectory(parentPath, repoUrl),
   cloneRepo: (url: string, localPath: string, branch?: string, token?: string) =>
     bridge.cloneRepo(url, localPath, branch, token),
-  detectCliProviders: () => bridge.detectCliProviders(),
+  detectCliProviders: async (force = false) => {
+    if (!force && cliProvidersCache) {
+      return cloneCliProviders(cliProvidersCache)
+    }
+
+    if (!force && cliProvidersRequest) {
+      return cloneCliProviders(await cliProvidersRequest)
+    }
+
+    const request = bridge.detectCliProviders()
+      .then(providers => {
+        cliProvidersCache = cloneCliProviders(providers)
+        return cloneCliProviders(cliProvidersCache)
+      })
+      .finally(() => {
+        if (cliProvidersRequest === request) {
+          cliProvidersRequest = null
+        }
+      })
+
+    cliProvidersRequest = request
+    return cloneCliProviders(await request)
+  },
   loadAiProviders: () => bridge.loadAiProviders(),
   saveAiProviders: (providers: any[]) => bridge.saveAiProviders(toIpcPayload(providers)),
   testAiProvider: (provider: any) => bridge.testAiProvider(toIpcPayload(provider)),

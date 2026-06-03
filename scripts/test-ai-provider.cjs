@@ -40,7 +40,7 @@ async function main() {
     logLevel: 'silent',
   });
 
-  const { executeCustomProvider, testAIProvider } = require(bundlePath);
+  const { executeCustomProvider, executeAI, testAIProvider, classifyCliFailure, detectAvailableCliProviders } = require(bundlePath);
   const provider = {
     type: 'custom',
     name: 'Test Provider',
@@ -179,6 +179,145 @@ async function main() {
     assert(!protocolMismatch.success, '显式选择 OpenAI 时不应向 Anthropic 地址发送请求');
     assert(protocolMismatch.error.includes('Anthropic Messages'), '协议不匹配时应提示切换 Anthropic Messages');
     assert(fetchCalls === callsBeforeProtocolMismatch, '协议不匹配时不应发送网络请求');
+
+    const childProcess = require('child_process');
+    const originalSpawn = childProcess.spawn;
+    const spawnedCalls = [];
+
+    childProcess.spawn = (command, args) => {
+      const listeners = {};
+      const child = {
+        stdout: { on: (event, callback) => { listeners[`stdout:${event}`] = callback; } },
+        stderr: { on: (event, callback) => { listeners[`stderr:${event}`] = callback; } },
+        stdin: {
+          end: input => {
+            spawnedCalls.push({ command, args, input });
+            queueMicrotask(() => {
+              listeners['stdout:data']?.(Buffer.from(command === 'codex' ? 'noisy stdout' : 'CLI summary'));
+              listeners.close?.(0);
+            });
+          },
+        },
+        on: (event, callback) => { listeners[event] = callback; },
+        kill: () => undefined,
+      };
+      return child;
+    };
+
+    try {
+      const claudeResult = await executeAI({
+        provider: { type: 'cli', name: 'Claude Code', cliCommand: 'claude', enabled: true },
+        prompt: 'user prompt',
+        systemPrompt: 'system prompt',
+      });
+      assert(claudeResult.success && claudeResult.content === 'CLI summary', 'Claude CLI 应通过 stdin 返回摘要');
+
+      const originalReadFile = fs.promises.readFile;
+      fs.promises.readFile = async filePath => {
+        assert(String(filePath).includes('codehandover-codex-'), 'Codex 应读取 output-last-message 文件');
+        return 'Codex summary';
+      };
+
+      const codexResult = await executeAI({
+        provider: { type: 'cli', name: 'OpenAI Codex', cliCommand: 'codex', enabled: true },
+        prompt: 'user prompt',
+        systemPrompt: 'system prompt',
+      });
+      fs.promises.readFile = originalReadFile;
+      assert(codexResult.success && codexResult.content === 'Codex summary', 'Codex CLI 应使用最终消息作为摘要');
+
+      const codexCall = spawnedCalls.find(call => call.command === 'codex');
+      assert(codexCall && codexCall.args[0] === 'exec', 'Codex CLI 应使用 codex exec 非交互模式');
+      assert(!codexCall.args.includes('-q'), 'Codex CLI 不应继续使用已过期的 -q 参数');
+      assert(codexCall.input.includes('system prompt'), 'CLI prompt 应通过 stdin 传入');
+
+      childProcess.spawn = () => {
+        const listeners = {};
+        return {
+          stdout: { on: (event, callback) => { listeners[`stdout:${event}`] = callback; } },
+          stderr: { on: (event, callback) => { listeners[`stderr:${event}`] = callback; } },
+          stdin: {
+            end: () => queueMicrotask(() => {
+              listeners['stdout:data']?.(Buffer.from('   '));
+              listeners.close?.(0);
+            }),
+          },
+          on: (event, callback) => { listeners[event] = callback; },
+          kill: () => undefined,
+        };
+      };
+      const emptyCliResult = await executeAI({
+        provider: { type: 'cli', name: 'Claude Code', cliCommand: 'claude', enabled: true },
+        prompt: 'user prompt',
+        systemPrompt: 'system prompt',
+      });
+      assert(!emptyCliResult.success && emptyCliResult.error.includes('没有返回摘要内容'), 'CLI 空响应不应被当作成功摘要');
+
+      const authStatus = classifyCliFailure('gemini', {
+        stdout: 'Opening authentication page in your browser. Do you want to continue? [Y/n]',
+        stderr: 'Authentication cancelled by user.',
+        exitCode: 1,
+        timedOut: false,
+      });
+      assert(authStatus === 'auth-required', 'Gemini 登录提示应被识别为需认证状态');
+    } finally {
+      childProcess.spawn = originalSpawn;
+    }
+
+    const originalExecFile = childProcess.execFile;
+    const originalReadFileForDetect = fs.promises.readFile;
+    const originalRmForDetect = fs.promises.rm;
+    childProcess.execFile = (command, _args, _options, callback) => {
+      queueMicrotask(() => callback(null, { stdout: `${command} 1.0.0`, stderr: '' }));
+      return { kill: () => undefined };
+    };
+    childProcess.spawn = (command, _args) => {
+      const listeners = {};
+      return {
+        stdout: { on: (event, callback) => { listeners[`stdout:${event}`] = callback; } },
+        stderr: { on: (event, callback) => { listeners[`stderr:${event}`] = callback; } },
+        stdin: {
+          end: () => queueMicrotask(() => {
+            if (command === 'gemini') {
+              listeners['stdout:data']?.(Buffer.from('Opening authentication page in your browser. Do you want to continue? [Y/n]'));
+              listeners['stderr:data']?.(Buffer.from('Authentication cancelled by user.'));
+              listeners.close?.(1);
+              return;
+            }
+
+            listeners['stdout:data']?.(Buffer.from(command === 'codex' ? 'noisy stdout' : 'OK'));
+            listeners.close?.(0);
+          }),
+        },
+        on: (event, callback) => { listeners[event] = callback; },
+        kill: () => undefined,
+      };
+    };
+    fs.promises.readFile = async filePath => {
+      assert(String(filePath).includes('codehandover-codex-detect-'), 'Codex 检测应读取 output-last-message 文件');
+      return 'OK';
+    };
+    fs.promises.rm = async () => undefined;
+
+    try {
+      delete require.cache[require.resolve(bundlePath)];
+      const detectionModule = require(bundlePath);
+      const detected = await detectionModule.detectAvailableCliProviders();
+      const claude = detected.find(provider => provider.cliCommand === 'claude');
+      const codex = detected.find(provider => provider.cliCommand === 'codex');
+      const gemini = detected.find(provider => provider.cliCommand === 'gemini');
+      assert(claude?.ready && claude.status === 'ready', 'Claude 检测通过时应标记为 ready');
+      assert(codex?.ready && codex.status === 'ready', 'Codex 检测通过时应标记为 ready');
+      assert(gemini?.available && !gemini.ready, 'Gemini 命令存在但未认证时不应标记为 ready');
+      assert(gemini.status === 'auth-required', 'Gemini 未认证时应返回 auth-required 状态');
+      assert(gemini.message.includes('登录') || gemini.message.includes('认证'), 'Gemini 未认证时应返回可读认证提示');
+    } finally {
+      childProcess.execFile = originalExecFile;
+      childProcess.spawn = originalSpawn;
+      fs.promises.readFile = originalReadFileForDetect;
+      fs.promises.rm = originalRmForDetect;
+      delete require.cache[require.resolve(bundlePath)];
+    }
 
     console.log(JSON.stringify({ assertions: 'passed', fetchCalls }, null, 2));
   } finally {

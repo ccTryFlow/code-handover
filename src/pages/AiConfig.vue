@@ -110,7 +110,7 @@
         <section class="settings-card">
           <div class="card-title-row">
             <h2>CLI 工具检测</h2>
-            <el-button type="primary" :icon="Refresh" :loading="detecting" @click="detectCli">
+            <el-button type="primary" :icon="Refresh" :loading="detecting" @click="detectCli(true)">
               重新检测
             </el-button>
           </div>
@@ -120,9 +120,11 @@
               <div>
                 <strong>{{ provider.name }}</strong>
                 <span>{{ provider.cliCommand }}</span>
+                <small v-if="provider.version">{{ provider.version }}</small>
+                <p>{{ provider.message || getCliStatusMessage(provider) }}</p>
               </div>
-              <el-tag :type="provider.available ? 'success' : 'info'">
-                {{ provider.available ? '可用' : '未安装' }}
+              <el-tag :type="getCliTagType(provider)">
+                {{ getCliStatusLabel(provider) }}
               </el-tag>
             </div>
             <el-empty v-if="cliProviders.length === 0 && !detecting" description="暂无检测结果" />
@@ -259,10 +261,13 @@ const providerType = ref('custom')
 const detecting = ref(false)
 const cliProviders = ref<Array<any>>([])
 const customProviders = ref<Array<any>>([])
-const connected = computed(() => customProviders.value.some(provider => (
-  provider._testResult?.success
-  && provider._testSignature === getProviderSignature(provider)
-)))
+const connected = computed(() => (
+  cliProviders.value.some(provider => provider.ready)
+  || customProviders.value.some(provider => (
+    provider._testResult?.success
+    && provider._testSignature === getProviderSignature(provider)
+  ))
+))
 const temperature = ref(0.7)
 const streamResponse = ref(true)
 const enableLogging = ref(true)
@@ -298,6 +303,27 @@ const invalidateProviderTest = (provider: any) => {
   provider._testSignature = ''
 }
 
+function getCliStatusLabel(provider: any): string {
+  if (provider.ready) return '已就绪'
+  if (provider.status === 'missing') return '未安装'
+  if (provider.status === 'auth-required') return '需认证'
+  return '检测失败'
+}
+
+function getCliTagType(provider: any): 'success' | 'warning' | 'danger' | 'info' {
+  if (provider.ready) return 'success'
+  if (provider.status === 'auth-required') return 'warning'
+  if (provider.status === 'error') return 'danger'
+  return 'info'
+}
+
+function getCliStatusMessage(provider: any): string {
+  if (provider.ready) return 'CLI 已通过非交互生成检测，可用于生成 AI 交接摘要'
+  if (provider.status === 'missing') return `未检测到 ${provider.cliCommand} 命令，请先安装`
+  if (provider.status === 'auth-required') return `请先在终端运行 ${provider.cliCommand} 完成登录或认证`
+  return 'CLI 命令存在，但非交互生成检测失败'
+}
+
 const sectionDescriptions: Record<SectionKey, string> = {
   ai: '配置默认模型来源，用于生成项目交接摘要和风险提示。',
   cli: '检测本机可用的 AI CLI 工具，优先复用已登录的本地能力。',
@@ -312,10 +338,10 @@ const currentTitle = computed(() => {
 
 const currentDescription = computed(() => sectionDescriptions[activeSection.value])
 
-const detectCli = async () => {
+const detectCli = async (force = false) => {
   detecting.value = true
   try {
-    cliProviders.value = await electronAPI.detectCliProviders()
+    cliProviders.value = await electronAPI.detectCliProviders(force)
   } catch (error) {
     ElMessage.error('CLI 工具检测失败')
   } finally {
@@ -383,7 +409,7 @@ const testProvider = async (provider: any) => {
 
 const saveConfig = async () => {
   const allProviders = [
-    ...cliProviders.value.filter((provider: any) => provider.available).map((provider: any) => ({
+    ...cliProviders.value.filter((provider: any) => provider.ready).map((provider: any) => ({
       type: 'cli',
       name: provider.name,
       cliCommand: provider.cliCommand,
@@ -705,6 +731,21 @@ onMounted(async () => {
   margin-top: 4px;
   color: #64748b;
   font-size: 13px;
+}
+
+.cli-row small {
+  display: block;
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.cli-row p {
+  max-width: 860px;
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .about-card {

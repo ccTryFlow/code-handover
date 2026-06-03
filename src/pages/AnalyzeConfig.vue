@@ -44,7 +44,7 @@
             </li>
           </ul>
           <el-alert
-            v-if="config.aiSummary && availableProviders.length === 0"
+            v-if="config.aiSummary && readyProviderCount === 0"
             title="尚未配置可用 AI 模型，AI 摘要将无法执行。"
             type="warning"
             :closable="false"
@@ -122,10 +122,24 @@
             <el-form-item v-if="config.aiSummary" label="AI 模型">
               <div class="provider-row">
                 <el-select v-model="selectedProviderIndex" placeholder="选择 AI 模型">
-                  <el-option v-for="(provider, index) in availableProviders" :key="index" :label="provider.label" :value="index" />
+                  <el-option
+                    v-for="(provider, index) in availableProviders"
+                    :key="index"
+                    :label="provider.label"
+                    :value="index"
+                    :disabled="provider.disabled"
+                  />
                 </el-select>
                 <el-button type="primary" plain @click="goAiConfig">管理设置</el-button>
               </div>
+              <el-alert
+                v-if="selectedProviderHint"
+                class="provider-hint"
+                :title="selectedProviderHint"
+                :type="selectedProviderReady ? 'success' : 'warning'"
+                :closable="false"
+                show-icon
+              />
             </el-form-item>
           </el-form>
         </section>
@@ -163,6 +177,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Check, Connection, Document, FolderOpened, User, VideoPlay } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import AuthorSelect from '../components/AuthorSelect.vue'
 import electronAPI from '../api/electron'
 import store from '../store'
@@ -203,10 +218,40 @@ const availableProviders = computed(() => {
   return allProviders.value.map((provider, index) => ({
     ...provider,
     label: provider.type === 'cli'
-      ? `${provider.name} (CLI)`
+      ? `${provider.name} (CLI${provider.ready ? '' : ` - ${getCliStatusLabel(provider)}`})`
       : `${provider.name || `自定义模型 ${index + 1}`} - ${provider.model || '未填写模型'} [${provider.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI'}]`,
+    disabled: provider.type === 'cli' && !provider.ready,
   }))
 })
+
+const selectedProvider = computed(() => allProviders.value[selectedProviderIndex.value] || null)
+
+const selectedProviderReady = computed(() => {
+  if (!selectedProvider.value) return false
+  return selectedProvider.value.type !== 'cli' || selectedProvider.value.ready
+})
+
+const selectedProviderHint = computed(() => {
+  const provider = selectedProvider.value
+  if (!provider || provider.type !== 'cli') return ''
+  return provider.message || (provider.ready ? 'CLI 已通过检测，可用于生成 AI 摘要' : 'CLI 当前不可用于生成 AI 摘要')
+})
+
+const readyProviderCount = computed(() => {
+  return allProviders.value.filter(provider => provider.type !== 'cli' || provider.ready).length
+})
+
+function getCliStatusLabel(provider: any): string {
+  if (provider.ready) return '可用'
+  if (provider.status === 'missing') return '未安装'
+  if (provider.status === 'auth-required') return '需认证'
+  return '不可用'
+}
+
+function selectFirstReadyProvider(): void {
+  const index = allProviders.value.findIndex(provider => provider.type !== 'cli' || provider.ready)
+  selectedProviderIndex.value = index >= 0 ? index : 0
+}
 
 const taskSummary = computed(() => [
   { label: '扫描项目结构与关键文件', enabled: true },
@@ -232,9 +277,17 @@ onMounted(async () => {
     const providers: any[] = []
 
     for (const provider of cliProviders) {
-      if (provider.available) {
-        providers.push({ type: 'cli', name: provider.name, cliCommand: provider.cliCommand, enabled: true })
-      }
+      providers.push({
+        type: 'cli',
+        name: provider.name,
+        cliCommand: provider.cliCommand,
+        enabled: true,
+        available: provider.available,
+        ready: provider.ready,
+        status: provider.status,
+        message: provider.message,
+        version: provider.version,
+      })
     }
 
     for (const provider of savedProviders) {
@@ -242,6 +295,7 @@ onMounted(async () => {
     }
 
     allProviders.value = providers
+    selectFirstReadyProvider()
   } catch {
     allProviders.value = []
   }
@@ -292,8 +346,19 @@ const goAiConfig = () => {
 const goBack = () => router.back()
 
 const startAnalyze = () => {
-  if (config.aiSummary && availableProviders.value.length > 0) {
-    config.aiProvider = normalizeProvider(allProviders.value[selectedProviderIndex.value])
+  if (config.aiSummary) {
+    if (readyProviderCount.value === 0) {
+      config.aiProvider = null
+      ElMessage.warning('没有可用于生成 AI 摘要的模型；请先完成 CLI 登录或配置自定义 API')
+      return
+    } else if (!selectedProviderReady.value) {
+      ElMessage.warning(selectedProviderHint.value || '当前选择的 AI 模型不可用，请先完成配置或认证')
+      return
+    } else {
+      config.aiProvider = normalizeProvider(allProviders.value[selectedProviderIndex.value])
+    }
+  } else {
+    config.aiProvider = null
   }
 
   store.setAnalyzeConfig({
@@ -535,6 +600,10 @@ const startAnalyze = () => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px;
   gap: 12px;
+}
+
+.provider-hint {
+  margin-top: 12px;
 }
 
 .settings-card :deep(.el-form-item__label) {

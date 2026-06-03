@@ -235,14 +235,15 @@ const runAnalysis = async () => {
     })
 
     if (config.aiSummary && config.aiProvider) {
-      addLog('正在生成 AI 交接摘要...')
+      const providerLabel = `${config.aiProvider.name || 'AI 模型'}${config.aiProvider.type === 'cli' ? ' (CLI)' : ''}`
+      addLog(`正在调用 ${providerLabel} 生成 AI 交接摘要...`)
       const aiResult = await electronAPI.aiSummarize(result, config.aiProvider)
-      if (aiResult.success) {
+      if (aiResult.success && aiResult.content?.trim()) {
         result.aiSummary = aiResult.content
         result.aiSummaryProvider = aiResult.provider || config.aiProvider.name
-        addLog('AI 交接摘要已生成')
+        addLog(`AI 交接摘要已生成：${result.aiSummaryProvider}，${aiResult.content.trim().length} 字`)
       } else {
-        addLog(`AI 交接摘要生成失败，已跳过：${aiResult.error || '未知错误'}`)
+        addLog(`${providerLabel} 未生成可写入摘要，已跳过：${aiResult.error || '未知错误'}`)
       }
     } else if (config.aiSummary) {
       addLog('未选择可用 AI 模型，已跳过 AI 交接摘要')

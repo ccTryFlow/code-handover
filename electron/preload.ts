@@ -1,6 +1,19 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { AnalyzeProgress } from './types';
 
+type CliProviderStatus = 'ready' | 'missing' | 'auth-required' | 'error';
+
+interface CliProviderDetection {
+  type: string;
+  name: string;
+  cliCommand: string;
+  available: boolean;
+  ready: boolean;
+  status: CliProviderStatus;
+  message: string;
+  version?: string;
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   checkGitRepo: (localPath: string) => ipcRenderer.invoke('check-git-repo', localPath),
@@ -54,7 +67,7 @@ declare global {
       removeRecentProject: (projectPath: string) => Promise<boolean>;
       getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => Promise<string>;
       cloneRepo: (url: string, localPath: string, branch?: string, token?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-      detectCliProviders: () => Promise<Array<{ type: string; name: string; cliCommand: string; available: boolean }>>;
+      detectCliProviders: (force?: boolean) => Promise<CliProviderDetection[]>;
       loadAiProviders: () => Promise<any[]>;
       saveAiProviders: (providers: any[]) => Promise<boolean>;
       testAiProvider: (provider: any) => Promise<{ success: boolean; content: string; error?: string }>;

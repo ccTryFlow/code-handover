@@ -33,6 +33,7 @@ function main() {
   });
 
   const calls = [];
+  let cliDetectCalls = 0;
   const sandbox = {
     window: {
       electronAPI: {
@@ -54,7 +55,18 @@ function main() {
         removeRecentProject: async () => true,
         getDefaultCloneDirectory: async parentPath => parentPath,
         cloneRepo: async () => ({ success: true }),
-        detectCliProviders: async () => [],
+        detectCliProviders: async () => {
+          cliDetectCalls += 1;
+          return [{
+            type: 'cli',
+            name: 'Mock CLI',
+            cliCommand: 'mock-cli',
+            available: true,
+            ready: true,
+            status: 'ready',
+            message: 'ready',
+          }];
+        },
         loadAiProviders: async () => [],
         saveAiProviders: async providers => {
           calls.push({ name: 'saveAiProviders', payload: providers });
@@ -92,6 +104,15 @@ function main() {
     .then(() => api.aiSummarize({ projectName: 'demo', fn: () => {} }, proxyProvider))
     .then(() => api.generateDocument({ projectName: 'demo', circular: undefined }, 'D:/repo/handover_demo.md'))
     .then(async () => {
+      const firstCliDetection = await api.detectCliProviders();
+      const secondCliDetection = await api.detectCliProviders();
+      assert(cliDetectCalls === 1, 'CLI 检测结果应在本次应用会话内缓存，避免页面反复打开时重复检测');
+      assert(firstCliDetection !== secondCliDetection, '缓存的 CLI 检测结果应返回副本，避免页面互相污染状态');
+      firstCliDetection[0].ready = false;
+      const cachedCliDetection = await api.detectCliProviders();
+      assert(cachedCliDetection[0].ready, '外部修改返回值不应污染 CLI 检测缓存');
+      await api.detectCliProviders(true);
+      assert(cliDetectCalls === 2, '用户手动重新检测时应强制刷新 CLI 状态');
       const analyzeCall = calls.find(call => call.name === 'analyzeProject');
       const aiCall = calls.find(call => call.name === 'aiSummarize');
       assert(analyzeCall.payload.provider.name === 'Proxy Provider', '应保留可序列化 Provider 字段');
