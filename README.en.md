@@ -67,18 +67,27 @@ Local Windows installer artifacts are generated under `release/` and are named l
 npm run electron:build:win
 ```
 
-Full Windows and macOS release packages are built by GitHub Actions. Push a `v*` tag to run `.github/workflows/release.yml`, build unsigned packages, and publish them to GitHub Releases:
+Windows release packages are built by GitHub Actions. Push a `v*` tag to run `.github/workflows/release.yml`, build unsigned Windows packages, and publish them to GitHub Releases:
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release includes Windows NSIS/MSI/portable packages for x64 and ia32, plus macOS DMG/ZIP packages for x64 and arm64. `release/win-unpacked/` and `release/mac/` are unpacked debug directories produced by electron-builder and should not be distributed as official downloads.
+The release includes Windows NSIS/MSI/portable packages for x64 and ia32. `release/win-unpacked/` is the unpacked debug directory produced by electron-builder and should not be distributed as an official download.
 
 The installer provides a setup wizard, desktop shortcut, Start Menu shortcut, and can launch CodeHandover after installation.
 
-If local packaging fails with `Cannot create symbolic link` or a missing privilege error, enable Windows Developer Mode or rerun `npm run electron:build` from an elevated terminal. macOS packages must be built on a macOS runner; do not try to build DMG artifacts directly from Windows.
+If local packaging fails with `Cannot create symbolic link` or a missing privilege error, enable Windows Developer Mode or rerun `npm run electron:build` from an elevated terminal.
+
+macOS installers are not published for now. macOS users can clone the repository, install dependencies, and run development mode:
+
+```bash
+git clone https://github.com/ccTryFlow/code-handover.git
+cd code-handover
+npm install
+npm run dev
+```
 
 ## Generate A Personal Handover Document
 
@@ -147,8 +156,8 @@ scripts/                 Core, IPC, and AI provider tests
 - Ensure `.env`, tokens, private repository URLs, and generated handover documents are not committed.
 - Run `npm run check`.
 - Run `npm run electron:build` to create the installer.
-- Push a `v*` tag when you need a complete GitHub Actions release build.
-- Upload only `.exe`, `.msi`, `.dmg`, `.zip`, `.blockmap`, and `.yml` artifacts from `release/` to GitHub Releases. Do not upload `release/win-unpacked/` or `release/mac/`.
+- Push a `v*` tag when you need a Windows GitHub Actions release build.
+- Upload only `.exe`, `.msi`, `.blockmap`, and `.yml` artifacts from `release/` to GitHub Releases. Do not upload `release/win-unpacked/`.
 - Validate the per-author handover flow with at least one real Git repository.
 - Review generated documents for sensitive configuration, secrets, or production data.
 - For private remote repositories, confirm `.git/config` does not contain tokens in `origin`.
