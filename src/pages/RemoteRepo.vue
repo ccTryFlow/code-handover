@@ -47,14 +47,20 @@
         </el-form-item>
 
         <el-form-item label="本地保存父目录" required>
-          <el-input v-model="form.parentPath" readonly placeholder="选择用于保存仓库的父目录">
-            <template #prefix>
-              <el-icon><Folder /></el-icon>
-            </template>
-            <template #append>
-              <el-button @click="handleSelectDirectory">选择目录</el-button>
-            </template>
-          </el-input>
+          <div class="directory-row">
+            <el-input v-model="form.parentPath" readonly placeholder="选择用于保存仓库的父目录">
+              <template #prefix>
+                <el-icon><Folder /></el-icon>
+              </template>
+            </el-input>
+            <el-button
+              class="form-action-button directory-button"
+              :loading="selectingDirectory"
+              @click="handleSelectDirectory"
+            >
+              {{ selectingDirectory ? '选择中' : '选择目录' }}
+            </el-button>
+          </div>
           <p v-if="form.localPath" class="clone-target">将克隆到：{{ form.localPath }}</p>
         </el-form-item>
 
@@ -69,6 +75,7 @@
               <el-option v-for="branch in branches" :key="branch" :label="branch" :value="branch" />
             </el-select>
             <el-button
+              class="form-action-button"
               :icon="Refresh"
               :disabled="!form.repoUrl"
               :loading="loadingBranches"
@@ -126,6 +133,7 @@ const form = ref({
 })
 
 const branches = ref<string[]>([])
+const selectingDirectory = ref(false)
 const loadingBranches = ref(false)
 const cloning = ref(false)
 const cloneProgress = ref('')
@@ -134,6 +142,9 @@ const clonePercentage = ref(0)
 const goBack = () => router.push('/')
 
 const handleSelectDirectory = async () => {
+  if (selectingDirectory.value) return
+
+  selectingDirectory.value = true
   try {
     const path = await electronAPI.selectDirectory()
     if (path) {
@@ -143,6 +154,8 @@ const handleSelectDirectory = async () => {
   } catch (error) {
     ElMessage.error('选择目录失败')
     console.error(error)
+  } finally {
+    selectingDirectory.value = false
   }
 }
 
@@ -369,11 +382,55 @@ const handleCloneAndAnalyze = async () => {
   border-radius: 12px;
 }
 
+.directory-row,
 .branch-row {
   width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 132px;
   gap: 12px;
+  align-items: center;
+}
+
+.directory-row :deep(.el-input),
+.branch-row :deep(.el-select) {
+  width: 100%;
+}
+
+.form-action-button {
+  width: 132px;
+  height: 48px;
+  border-radius: 12px;
+  font-weight: 700;
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #ffffff, #eff6ff);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.form-action-button:hover:not(.is-disabled) {
+  color: #1d4ed8;
+  border-color: #60a5fa;
+  background: linear-gradient(180deg, #f8fbff, #dbeafe);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.14);
+}
+
+.form-action-button:active:not(.is-disabled) {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: inset 0 2px 6px rgba(37, 99, 235, 0.16);
+}
+
+.directory-button {
+  color: #ffffff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #2563eb, #20c5bd);
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+}
+
+.directory-button:hover:not(.is-disabled) {
+  color: #ffffff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
 }
 
 .progress-alert {
@@ -429,6 +486,14 @@ const handleCloneAndAnalyze = async () => {
 
   .branch-row {
     grid-template-columns: 1fr;
+  }
+
+  .directory-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-action-button {
+    width: 100%;
   }
 
   .flow-actions {
