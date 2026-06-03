@@ -35,6 +35,9 @@ jobs:
       - name: Run quality gate
         run: npm run check
 
+      - name: Run security audit
+        run: npm run security:audit
+
   windows:
     name: Windows x64 installers
     runs-on: windows-latest

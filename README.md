@@ -55,6 +55,10 @@ npm run dev
 
 开发模式会启动 Vite，并通过 Electron 打开桌面应用。
 
+## 现场讲解文档
+
+如果需要发布前演示或直播讲解，可以按 [CodeHandover 现场讲解与操作文档](docs/live-demo-guide.md) 操作。文档包含演示路线、讲解话术、现场兜底方案和发布前质量检查清单。
+
 ## 正式安装包
 
 ```bash
@@ -124,12 +128,14 @@ npm run test:core
 npm run test:ipc
 npm run test:ai-provider
 npm run build
+npm run security:audit
 npm run check
 ```
 
 `npm run test:core` 会创建临时 Git 仓库，验证作者邮箱匹配、rename/delete 历史、增删行统计、风险文件识别、方法逻辑备注和 Markdown 导出。
 
 `npm run check` 会依次执行发布保护检查、前端类型检查、Electron 类型检查、核心链路测试、IPC 测试、AI Provider 测试和生产构建。发布保护检查会确认 DevTools 不会默认打开、网页环境不能直接当应用使用、Windows 发布目标只保留 x64 `.exe` 和 `.msi` 安装包。
+`npm run security:audit` 会使用官方 npm registry 检查高危及以上依赖漏洞，避免本地镜像不支持 audit 接口导致误判。
 
 ## 当前边界
 
@@ -155,6 +161,7 @@ scripts/                核心链路、IPC 和 AI Provider 测试
 
 - 确认 `.env`、Token、私有仓库地址和生成的交接文档没有被提交。
 - 运行 `npm run check`。
+- 运行 `npm run security:audit`。
 - 运行 `npm run electron:build` 生成安装包。
 - 如需发布 Windows 安装包，推送 `v*` tag 触发 GitHub Actions Release workflow。
 - GitHub Release 只上传 `release/` 下的 x64 安装器 `.exe` 和 `.msi`，不要上传 `.blockmap`、`latest.yml` 或 `release/win-unpacked/`。

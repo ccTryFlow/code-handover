@@ -55,6 +55,10 @@ npm run dev
 
 Development mode starts Vite and opens the Electron desktop app.
 
+## Live Demo Guide
+
+For release demos or walkthroughs, see the Chinese [CodeHandover live demo guide](docs/live-demo-guide.md). It includes the operation path, speaking notes, fallback handling, and pre-release quality checklist.
+
 ## Installer Build
 
 ```bash
@@ -124,12 +128,14 @@ npm run test:core
 npm run test:ipc
 npm run test:ai-provider
 npm run build
+npm run security:audit
 npm run check
 ```
 
 `npm run test:core` creates a temporary Git repository and verifies email-based author matching, rename/delete history, line statistics, risky-file detection, method notes, and Markdown export.
 
 `npm run check` runs release guards, frontend type checks, Electron type checks, core tests, IPC tests, AI provider tests, and the production build. Release guards verify that DevTools is not opened by default, browser-only usage is blocked, and the Windows release target only keeps x64 `.exe` and `.msi` installers.
+`npm run security:audit` checks high-severity and critical dependency advisories through the official npm registry, avoiding false failures from mirrors that do not implement the audit endpoint.
 
 ## Current Limits
 
@@ -155,6 +161,7 @@ scripts/                 Core, IPC, and AI provider tests
 
 - Ensure `.env`, tokens, private repository URLs, and generated handover documents are not committed.
 - Run `npm run check`.
+- Run `npm run security:audit`.
 - Run `npm run electron:build` to create the installer.
 - Push a `v*` tag when you need a Windows GitHub Actions release build.
 - Upload only the x64 setup `.exe` and `.msi` from `release/` to GitHub Releases. Do not upload `.blockmap`, `latest.yml`, or `release/win-unpacked/`.

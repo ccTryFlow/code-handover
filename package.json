@@ -24,6 +24,8 @@
     "test:ai-provider": "node scripts/test-ai-provider.cjs",
     "test:core": "node scripts/test-core.cjs",
     "release:guard": "node scripts/check-release-guards.cjs",
+    "security:audit": "npm audit --audit-level=high --registry=https://registry.npmjs.org",
+    "security:audit:prod": "npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org",
     "typecheck": "vue-tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.node.json --noEmit",
     "check": "npm run release:guard && npm run typecheck && npm run typecheck:electron && npm run test:core && npm run test:ipc && npm run test:ai-provider && npm run build"
@@ -37,8 +39,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron": "^42.3.2",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.25.0",
     "rcedit": "^4.0.0",
     "typescript": "^5.7.2",
