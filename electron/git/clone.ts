@@ -15,6 +15,11 @@ interface GitError extends Error {
   stderr?: string | Buffer;
 }
 
+interface CloneAttempt {
+  name: string;
+  args: string[];
+}
+
 function getGitEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -58,15 +63,7 @@ export async function cloneRepo(
     basicToken = header.basicToken;
 
     await assertCloneTargetAvailable(localPath);
-
-    const args: string[] = [...header.args];
-    args.push('clone');
-    if (branch) {
-      args.push('--branch', branch);
-    }
-    args.push(url, localPath);
-
-    await runGit(args, CLONE_GIT_TIMEOUT_MS);
+    await cloneWithRetries(url, localPath, branch, header.args);
 
     if (token && /^https?:\/\//i.test(url)) {
       await runGit(['-C', localPath, 'remote', 'set-url', 'origin', url], REMOTE_GIT_TIMEOUT_MS);
@@ -75,6 +72,130 @@ export async function cloneRepo(
     const rawMessage = formatGitError(error, CLONE_GIT_TIMEOUT_MS, '克隆仓库');
     const safeMessage = sanitizeCloneError(rawMessage, token, basicToken);
     throw new Error(`克隆仓库失败：${safeMessage}`);
+  }
+}
+
+async function cloneWithRetries(
+  url: string,
+  localPath: string,
+  branch: string | undefined,
+  headerArgs: string[]
+): Promise<void> {
+  const attempts = buildCloneAttempts(url, localPath, branch, headerArgs);
+  const errors: string[] = [];
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
+
+    try {
+      await runGit(attempt.args, CLONE_GIT_TIMEOUT_MS);
+      return;
+    } catch (error) {
+      const detail = formatGitError(error, CLONE_GIT_TIMEOUT_MS, attempt.name);
+      errors.push(`${attempt.name}：${detail}`);
+
+      if (!shouldRetryClone(error) || index === attempts.length - 1) {
+        throw new Error(buildCloneFailureMessage(errors, isRecoverableTransportError(error)));
+      }
+
+      await removePartialClone(localPath);
+    }
+  }
+}
+
+function buildCloneAttempts(
+  url: string,
+  localPath: string,
+  branch: string | undefined,
+  headerArgs: string[]
+): CloneAttempt[] {
+  const baseCloneArgs = buildCloneArgs(url, localPath, branch);
+  const compatibleCloneArgs = buildCloneArgs(url, localPath, branch, [
+    '--single-branch',
+    '--no-tags',
+  ]);
+  const partialCloneArgs = buildCloneArgs(url, localPath, branch, [
+    '--single-branch',
+    '--no-tags',
+    '--filter=blob:none',
+  ]);
+
+  return [
+    {
+      name: '标准克隆',
+      args: [...headerArgs, 'clone', ...baseCloneArgs],
+    },
+    {
+      name: '兼容模式克隆（HTTP/1.1）',
+      args: [
+        ...headerArgs,
+        '-c',
+        'http.version=HTTP/1.1',
+        '-c',
+        'http.lowSpeedLimit=1000',
+        '-c',
+        'http.lowSpeedTime=60',
+        'clone',
+        ...compatibleCloneArgs,
+      ],
+    },
+    {
+      name: '省流模式克隆（单分支、延迟拉取大文件）',
+      args: [
+        ...headerArgs,
+        '-c',
+        'http.version=HTTP/1.1',
+        '-c',
+        'http.lowSpeedLimit=1000',
+        '-c',
+        'http.lowSpeedTime=60',
+        'clone',
+        ...partialCloneArgs,
+      ],
+    },
+  ];
+}
+
+function buildCloneArgs(
+  url: string,
+  localPath: string,
+  branch?: string,
+  extraArgs: string[] = []
+): string[] {
+  const args = [...extraArgs];
+  if (branch) {
+    args.push('--branch', branch);
+  }
+  args.push(url, localPath);
+  return args;
+}
+
+function shouldRetryClone(error: unknown): boolean {
+  return isRecoverableTransportError(error);
+}
+
+function isRecoverableTransportError(error: unknown): boolean {
+  const detail = getGitErrorDetail(error);
+  return /RPC failed|curl 56|SSL_ERROR_SYSCALL|early EOF|unexpected disconnect|sideband|invalid index-pack output|index-pack failed|Connection reset|Failed to connect|Connection timed out|Operation timed out/i
+    .test(detail);
+}
+
+function buildCloneFailureMessage(errors: string[], transportLike: boolean): string {
+  const retrySummary = errors.length > 1
+    ? `已自动重试 ${errors.length} 次，仍未成功。`
+    : '';
+  const hint = transportLike
+    ? '这通常是远程 Git 服务、代理、网络链路或仓库体积导致的传输中断；应用已尝试 HTTP/1.1、单分支和省流模式。请稍后重试，或检查代理/VPN/Git 网络配置。'
+    : '';
+
+  return [retrySummary, hint, errors[errors.length - 1]].filter(Boolean).join('\n');
+}
+
+async function removePartialClone(localPath: string): Promise<void> {
+  try {
+    await fs.rm(localPath, { recursive: true, force: true });
+  } catch {
+    // 下一次 git clone 会再次检查目录；这里不吞掉最终错误路径。
   }
 }
 
@@ -100,7 +221,7 @@ export async function getRemoteBranches(url: string, token?: string): Promise<st
       .map(line => line.split(/\s+/)[1])
       .filter(Boolean)
       .map(ref => ref.replace(/^refs\/heads\//, ''))
-      .filter(branch => branch.length > 0)
+      .filter(branchName => branchName.length > 0)
       .sort((a, b) => {
         if (a === 'main' || a === 'master') return -1;
         if (b === 'main' || b === 'master') return 1;
@@ -132,7 +253,7 @@ async function assertCloneTargetAvailable(localPath: string): Promise<void> {
   try {
     const entries = await fs.readdir(localPath);
     if (entries.length > 0) {
-      throw new Error(`Target directory is not empty: ${localPath}`);
+      throw new Error(`目标目录不是空目录：${localPath}`);
     }
   } catch (error) {
     const nodeError = error as NodeJS.ErrnoException;
@@ -156,28 +277,38 @@ function sanitizeCloneError(message: string, token?: string, basicToken?: string
 
 function formatGitError(error: unknown, timeoutMs: number, action: string): string {
   const gitError = error as GitError;
-  const stderr = bufferToString(gitError?.stderr).trim();
-  const stdout = bufferToString(gitError?.stdout).trim();
+  const detail = getGitErrorDetail(error);
   const message = error instanceof Error ? error.message : String(error);
-  const detail = stderr || stdout || message;
 
   if (gitError?.killed || gitError?.signal === 'SIGTERM' || /timed out/i.test(message)) {
-    return `${action}超时（${Math.round(timeoutMs / 1000)} 秒）。请确认网络能访问远程仓库，或检查代理、GitHub 连接和访问令牌。`;
+    return `${action}超时（${Math.round(timeoutMs / 1000)} 秒）。请确认网络能访问远程仓库，或检查代理、Git 服务连接和访问令牌。`;
   }
 
   if (/Authentication failed|could not read Username|terminal prompts disabled|access denied|Permission denied/i.test(detail)) {
-    return `${action}认证失败。私有仓库请填写有效 Token，或确认当前 Git/SSH 凭据可用。${detail}`;
+    return `${action}认证失败。私有仓库请填写有效 Token，或确认当前 Git/SSH 凭据可用。\n${detail}`;
   }
 
-  if (/Could not resolve host|Failed to connect|Connection timed out|Connection reset|unable to access/i.test(detail)) {
-    return `${action}网络连接失败。请确认当前网络、代理或 DNS 能访问远程仓库。${detail}`;
+  if (/RPC failed|curl 56|SSL_ERROR_SYSCALL|early EOF|unexpected disconnect|sideband|invalid index-pack output|index-pack failed/i.test(detail)) {
+    return `${action}传输中断。远程仓库可以使用 Git 访问，但数据下载过程中连接被提前断开。\n${detail}`;
+  }
+
+  if (/Could not resolve host|Failed to connect|Connection timed out|Connection reset|unable to access|Operation timed out/i.test(detail)) {
+    return `${action}网络连接失败。请确认当前网络、代理或 DNS 能访问远程仓库。\n${detail}`;
   }
 
   if (/Repository not found|not found/i.test(detail)) {
-    return `${action}失败，远程仓库不存在或当前账号没有访问权限。${detail}`;
+    return `${action}失败，远程仓库不存在或当前账号没有访问权限。\n${detail}`;
   }
 
   return detail || `${action}失败`;
+}
+
+function getGitErrorDetail(error: unknown): string {
+  const gitError = error as GitError;
+  const stderr = bufferToString(gitError?.stderr).trim();
+  const stdout = bufferToString(gitError?.stdout).trim();
+  const message = error instanceof Error ? error.message : String(error);
+  return stderr || stdout || message;
 }
 
 function bufferToString(value: string | Buffer | undefined): string {

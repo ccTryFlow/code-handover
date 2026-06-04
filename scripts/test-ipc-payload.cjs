@@ -193,6 +193,11 @@ function verifyFailureHandling() {
     '远程仓库页面应拦截 cloneRepo 返回的失败结果'
   );
   assert(
+    remoteRepoPageSource.includes('https://gitee.com/company/project.git') &&
+      remoteRepoPageSource.includes('支持 Gitee、GitHub、GitLab 和自建 Git'),
+    '远程仓库页面应提示支持通用 Git 服务，而不是只暗示 GitHub'
+  );
+  assert(
     remoteRepoPageSource.includes('branchFetchError') &&
       remoteRepoPageSource.includes("ElMessage.error('获取分支失败')"),
     '远程仓库页面应展示获取分支失败原因，避免下拉框一直 loading'

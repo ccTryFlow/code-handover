@@ -15,8 +15,9 @@
         </div>
         <span>Clone Workflow</span>
         <h2>远程仓库导入</h2>
-        <p>输入仓库地址、选择本地保存位置后，CodeHandover 会自动拉取代码并进入分析配置。</p>
+        <p>输入 Git 仓库地址、选择本地保存位置后，CodeHandover 会自动拉取代码并进入分析配置。</p>
         <ul>
+          <li><el-icon><Check /></el-icon> 支持 Gitee、GitHub、GitLab 和自建 Git</li>
           <li><el-icon><Check /></el-icon> 支持私有仓库 Token</li>
           <li><el-icon><Check /></el-icon> 自动识别默认保存目录</li>
           <li><el-icon><Check /></el-icon> 可选择远程分支</li>
@@ -28,7 +29,7 @@
         <el-form-item label="仓库地址" required>
           <el-input
             v-model="form.repoUrl"
-            placeholder="https://github.com/company/project.git"
+            placeholder="https://gitee.com/company/project.git"
             clearable
             @input="handleUrlInput"
           >

@@ -762,6 +762,11 @@ function verifyCloneTokenSafety() {
   assert(cloneSource.includes('assertCloneTargetAvailable'), 'clone 前应检查目标目录，避免覆盖非空目录');
   assert(cloneSource.includes('REMOTE_GIT_TIMEOUT_MS') && cloneSource.includes('timeout,'), '远程 Git 操作必须设置超时，避免获取分支一直 loading');
   assert(cloneSource.includes('formatGitError'), '远程 Git 操作错误应转换为可读提示');
+  assert(cloneSource.includes('cloneWithRetries'), 'clone 应支持传输中断后的自动重试');
+  assert(cloneSource.includes('curl 56') && cloneSource.includes('early EOF'), 'clone 应识别 Gitee/Git 传输中断类错误');
+  assert(cloneSource.includes('http.version=HTTP/1.1'), 'clone 重试应支持 HTTP/1.1 兼容模式');
+  assert(cloneSource.includes('--filter=blob:none'), 'clone 重试应支持省流模式，降低大仓库传输失败概率');
+  assert(cloneSource.includes('removePartialClone'), 'clone 重试前应清理半成品目录');
   assert(!cloneSource.includes('${token}@'), 'clone 不应把 Token 拼接进远程 URL');
 }
 
