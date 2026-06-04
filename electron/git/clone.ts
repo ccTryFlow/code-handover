@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -6,6 +6,13 @@ import * as path from 'path';
 const execFileAsync = promisify(execFile);
 const REMOTE_GIT_TIMEOUT_MS = 30000;
 const CLONE_GIT_TIMEOUT_MS = 10 * 60 * 1000;
+
+export interface CloneProgress {
+  stage: 'prepare' | 'attempt' | 'receiving' | 'resolving' | 'checkout' | 'finalizing' | 'retrying';
+  message: string;
+  percent: number;
+  raw?: string;
+}
 
 interface GitError extends Error {
   code?: string | number | null;
@@ -18,6 +25,12 @@ interface GitError extends Error {
 interface CloneAttempt {
   name: string;
   args: string[];
+  startPercent: number;
+}
+
+interface GitSpawnResult {
+  stdout: string;
+  stderr: string;
 }
 
 function getGitEnv(): NodeJS.ProcessEnv {
@@ -54,7 +67,8 @@ export async function cloneRepo(
   url: string,
   localPath: string,
   branch?: string,
-  token?: string
+  token?: string,
+  onProgress?: (progress: CloneProgress) => void
 ): Promise<void> {
   let basicToken = '';
 
@@ -62,14 +76,18 @@ export async function cloneRepo(
     const header = buildTokenHeaderArgs(url, token);
     basicToken = header.basicToken;
 
+    emitCloneProgress(onProgress, 'prepare', 'Preparing clone target', 8);
     await assertCloneTargetAvailable(localPath);
-    await cloneWithRetries(url, localPath, branch, header.args);
+    await cloneWithRetries(url, localPath, branch, header.args, onProgress);
 
     if (token && /^https?:\/\//i.test(url)) {
+      emitCloneProgress(onProgress, 'finalizing', 'Resetting remote URL credentials', 96);
       await runGit(['-C', localPath, 'remote', 'set-url', 'origin', url], REMOTE_GIT_TIMEOUT_MS);
     }
+
+    emitCloneProgress(onProgress, 'finalizing', 'Clone completed', 100);
   } catch (error) {
-    const rawMessage = formatGitError(error, CLONE_GIT_TIMEOUT_MS, '克隆仓库');
+    const rawMessage = formatGitError(error, CLONE_GIT_TIMEOUT_MS, 'clone repository');
     const safeMessage = sanitizeCloneError(rawMessage, token, basicToken);
     throw new Error(`克隆仓库失败：${safeMessage}`);
   }
@@ -79,7 +97,8 @@ async function cloneWithRetries(
   url: string,
   localPath: string,
   branch: string | undefined,
-  headerArgs: string[]
+  headerArgs: string[],
+  onProgress?: (progress: CloneProgress) => void
 ): Promise<void> {
   const attempts = buildCloneAttempts(url, localPath, branch, headerArgs);
   const errors: string[] = [];
@@ -88,19 +107,135 @@ async function cloneWithRetries(
     const attempt = attempts[index];
 
     try {
-      await runGit(attempt.args, CLONE_GIT_TIMEOUT_MS);
+      emitCloneProgress(onProgress, 'attempt', attempt.name, attempt.startPercent);
+      await runCloneAttempt(attempt, onProgress);
+      emitCloneProgress(onProgress, 'finalizing', 'Checking cloned repository', 94);
+      await runGit(['-C', localPath, 'rev-parse', '--is-inside-work-tree'], REMOTE_GIT_TIMEOUT_MS);
       return;
     } catch (error) {
       const detail = formatGitError(error, CLONE_GIT_TIMEOUT_MS, attempt.name);
-      errors.push(`${attempt.name}：${detail}`);
+      errors.push(`${attempt.name}: ${detail}`);
 
       if (!shouldRetryClone(error) || index === attempts.length - 1) {
         throw new Error(buildCloneFailureMessage(errors, isRecoverableTransportError(error)));
       }
 
+      emitCloneProgress(onProgress, 'retrying', 'Cleaning partial clone before retry', Math.min(88, attempt.startPercent + 18));
       await removePartialClone(localPath);
     }
   }
+}
+
+function runCloneAttempt(
+  attempt: CloneAttempt,
+  onProgress?: (progress: CloneProgress) => void
+): Promise<GitSpawnResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', attempt.args, {
+      env: getGitEnv(),
+      windowsHide: true,
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+    }, CLONE_GIT_TIMEOUT_MS);
+
+    const handleOutput = (chunk: Buffer, target: Buffer[]) => {
+      target.push(chunk);
+      const text = chunk.toString('utf8');
+      for (const line of splitGitProgress(text)) {
+        const progress = parseCloneProgressLine(line, attempt.startPercent);
+        if (progress) {
+          onProgress?.(progress);
+        }
+      }
+    };
+
+    child.stdout.on('data', chunk => handleOutput(Buffer.from(chunk), stdoutChunks));
+    child.stderr.on('data', chunk => handleOutput(Buffer.from(chunk), stderrChunks));
+
+    child.on('error', error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+      const stderr = Buffer.concat(stderrChunks).toString('utf8');
+
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      const error = new Error(stderr || stdout || `git clone exited with code ${code ?? 'unknown'}`) as GitError;
+      error.code = code;
+      error.signal = signal;
+      error.killed = signal === 'SIGTERM';
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+  });
+}
+
+function splitGitProgress(text: string): string[] {
+  return text
+    .split(/[\r\n]+/)
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function parseCloneProgressLine(line: string, startPercent: number): CloneProgress | null {
+  const percentage = parseFirstPercent(line);
+  if (line.includes('Receiving objects')) {
+    return {
+      stage: 'receiving',
+      message: `Receiving objects ${percentage ?? ''}%`.trim(),
+      percent: scalePercent(percentage, startPercent, 72),
+      raw: line,
+    };
+  }
+  if (line.includes('Resolving deltas')) {
+    return {
+      stage: 'resolving',
+      message: `Resolving deltas ${percentage ?? ''}%`.trim(),
+      percent: scalePercent(percentage, 72, 88),
+      raw: line,
+    };
+  }
+  if (line.includes('Updating files')) {
+    return {
+      stage: 'checkout',
+      message: `Updating files ${percentage ?? ''}%`.trim(),
+      percent: scalePercent(percentage, 88, 94),
+      raw: line,
+    };
+  }
+  if (/Cloning into/i.test(line)) {
+    return {
+      stage: 'attempt',
+      message: 'Connecting remote repository',
+      percent: Math.max(startPercent, 18),
+      raw: line,
+    };
+  }
+  return null;
+}
+
+function parseFirstPercent(line: string): number | null {
+  const match = line.match(/(\d{1,3})%/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, value));
+}
+
+function scalePercent(value: number | null, min: number, max: number): number {
+  if (value === null) return min;
+  return Math.round(min + ((max - min) * value) / 100);
 }
 
 function buildCloneAttempts(
@@ -122,11 +257,12 @@ function buildCloneAttempts(
 
   return [
     {
-      name: '标准克隆',
+      name: 'Standard clone',
       args: [...headerArgs, 'clone', ...baseCloneArgs],
+      startPercent: 18,
     },
     {
-      name: '兼容模式克隆（HTTP/1.1）',
+      name: 'Compatibility clone with HTTP/1.1',
       args: [
         ...headerArgs,
         '-c',
@@ -138,9 +274,10 @@ function buildCloneAttempts(
         'clone',
         ...compatibleCloneArgs,
       ],
+      startPercent: 24,
     },
     {
-      name: '省流模式克隆（单分支、延迟拉取大文件）',
+      name: 'Reduced transfer clone with single branch',
       args: [
         ...headerArgs,
         '-c',
@@ -152,6 +289,7 @@ function buildCloneAttempts(
         'clone',
         ...partialCloneArgs,
       ],
+      startPercent: 30,
     },
   ];
 }
@@ -195,7 +333,7 @@ async function removePartialClone(localPath: string): Promise<void> {
   try {
     await fs.rm(localPath, { recursive: true, force: true });
   } catch {
-    // 下一次 git clone 会再次检查目录；这里不吞掉最终错误路径。
+    // The next clone attempt will validate the target path again.
   }
 }
 
@@ -309,6 +447,15 @@ function getGitErrorDetail(error: unknown): string {
   const stdout = bufferToString(gitError?.stdout).trim();
   const message = error instanceof Error ? error.message : String(error);
   return stderr || stdout || message;
+}
+
+function emitCloneProgress(
+  onProgress: ((progress: CloneProgress) => void) | undefined,
+  stage: CloneProgress['stage'],
+  message: string,
+  percent: number
+): void {
+  onProgress?.({ stage, message, percent });
 }
 
 function bufferToString(value: string | Buffer | undefined): string {

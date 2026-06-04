@@ -55,6 +55,7 @@ function main() {
         removeRecentProject: async () => true,
         getDefaultCloneDirectory: async parentPath => parentPath,
         cloneRepo: async () => ({ success: true }),
+        onCloneProgress: () => () => undefined,
         detectCliProviders: async () => {
           cliDetectCalls += 1;
           return [{
@@ -119,6 +120,7 @@ function main() {
       assert(!('onClick' in analyzeCall.payload.provider), '应移除函数字段，避免 IPC 克隆失败');
       assert(!('fn' in aiCall.payload.result), '应移除分析结果中的函数字段');
       verifyAnalyzeProgressIpc();
+      verifyCloneProgressIpc();
       verifyProductionEntry();
       verifyContextMenu();
       verifyFailureHandling();
@@ -149,6 +151,36 @@ function verifyAnalyzeProgressIpc() {
   assert(
     pageSource.includes('electronAPI.onAnalyzeProgress(handleAnalyzeProgress)') && pageSource.includes('onUnmounted'),
     '分析进度页应订阅进度事件并在卸载时取消监听'
+  );
+}
+
+function verifyCloneProgressIpc() {
+  const mainSource = fs.readFileSync(mainSourcePath, 'utf8');
+  const preloadSource = fs.readFileSync(preloadSourcePath, 'utf8');
+  const electronApiSource = fs.readFileSync(path.join(rootDir, 'src', 'api', 'electron.ts'), 'utf8');
+  const remoteRepoPageSource = fs.readFileSync(remoteRepoPagePath, 'utf8');
+
+  assert(
+    mainSource.includes("event.sender.send('clone-progress', progress)"),
+    '主进程应把远程 clone 进度通过 clone-progress 事件发送给渲染进程'
+  );
+  assert(
+    preloadSource.includes('onCloneProgress') && preloadSource.includes("ipcRenderer.on('clone-progress'"),
+    'preload 应暴露远程 clone 进度订阅 API'
+  );
+  assert(
+    preloadSource.includes("removeListener('clone-progress'"),
+    'preload 的远程 clone 进度订阅 API 应返回取消监听函数'
+  );
+  assert(
+    electronApiSource.includes('CloneProgress') && electronApiSource.includes('onCloneProgress'),
+    '渲染层 API 应声明远程 clone 进度类型与订阅函数'
+  );
+  assert(
+    remoteRepoPageSource.includes('electronAPI.onCloneProgress') &&
+      remoteRepoPageSource.includes('onUnmounted') &&
+      remoteRepoPageSource.includes('正在写入工作区文件'),
+    '远程仓库页面应订阅 clone 进度并展示 checkout 阶段，避免固定卡在 45%'
   );
 }
 

@@ -241,10 +241,12 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
 });
 
 // IPC Handler: clone-repo
-ipcMain.handle('clone-repo', async (_event, payload: { url: string; localPath: string; branch?: string; token?: string }) => {
+ipcMain.handle('clone-repo', async (event, payload: { url: string; localPath: string; branch?: string; token?: string }) => {
   try {
     const { url, localPath, branch, token } = payload;
-    await cloneRepo(url, localPath, branch, token);
+    await cloneRepo(url, localPath, branch, token, progress => {
+      event.sender.send('clone-progress', progress);
+    });
     return { success: true, path: localPath };
   } catch (error) {
     console.error('Failed to clone repo:', error);

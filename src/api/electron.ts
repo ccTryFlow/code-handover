@@ -13,6 +13,13 @@ export interface CliProviderDetection {
   version?: string;
 }
 
+export interface CloneProgress {
+  stage: string;
+  message: string;
+  percent: number;
+  raw?: string;
+}
+
 interface ElectronAPI {
   selectDirectory: () => Promise<string | null>;
   checkGitRepo: (localPath: string) => Promise<boolean>;
@@ -36,6 +43,7 @@ interface ElectronAPI {
   removeRecentProject: (projectPath: string) => Promise<boolean>;
   getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => Promise<string>;
   cloneRepo: (url: string, localPath: string, branch?: string, token?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  onCloneProgress: (callback: (progress: CloneProgress) => void) => () => void;
   detectCliProviders: (force?: boolean) => Promise<CliProviderDetection[]>;
   loadAiProviders: () => Promise<any[]>;
   saveAiProviders: (providers: any[]) => Promise<boolean>;
@@ -61,6 +69,7 @@ const fallback: ElectronAPI = {
   removeRecentProject: async () => false,
   getDefaultCloneDirectory: async (parentPath: string) => parentPath,
   cloneRepo: async () => ({ success: false }),
+  onCloneProgress: () => () => undefined,
   detectCliProviders: async () => [],
   loadAiProviders: async () => [],
   saveAiProviders: async () => false,
@@ -126,6 +135,7 @@ export const electronAPI: ElectronAPI = {
   getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => bridge.getDefaultCloneDirectory(parentPath, repoUrl),
   cloneRepo: (url: string, localPath: string, branch?: string, token?: string) =>
     bridge.cloneRepo(url, localPath, branch, token),
+  onCloneProgress: (callback: (progress: CloneProgress) => void) => bridge.onCloneProgress(callback),
   detectCliProviders: async (force = false) => {
     if (!force && cliProvidersCache) {
       return cloneCliProviders(cliProvidersCache)

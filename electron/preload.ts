@@ -14,6 +14,13 @@ interface CliProviderDetection {
   version?: string;
 }
 
+interface CloneProgress {
+  stage: string;
+  message: string;
+  percent: number;
+  raw?: string;
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   checkGitRepo: (localPath: string) => ipcRenderer.invoke('check-git-repo', localPath),
@@ -34,6 +41,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('get-default-clone-directory', { parentPath, repoUrl }),
   cloneRepo: (url: string, localPath: string, branch?: string, token?: string) =>
     ipcRenderer.invoke('clone-repo', { url, localPath, branch, token }),
+  onCloneProgress: (callback: (progress: CloneProgress) => void) => {
+    const listener = (_event: IpcRendererEvent, progress: CloneProgress) => callback(progress);
+    ipcRenderer.on('clone-progress', listener);
+    return () => ipcRenderer.removeListener('clone-progress', listener);
+  },
   // AI Provider APIs
   detectCliProviders: () => ipcRenderer.invoke('detect-cli-providers'),
   loadAiProviders: () => ipcRenderer.invoke('load-ai-providers'),
@@ -67,6 +79,7 @@ declare global {
       removeRecentProject: (projectPath: string) => Promise<boolean>;
       getDefaultCloneDirectory: (parentPath: string, repoUrl: string) => Promise<string>;
       cloneRepo: (url: string, localPath: string, branch?: string, token?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+      onCloneProgress: (callback: (progress: CloneProgress) => void) => () => void;
       detectCliProviders: (force?: boolean) => Promise<CliProviderDetection[]>;
       loadAiProviders: () => Promise<any[]>;
       saveAiProviders: (providers: any[]) => Promise<boolean>;

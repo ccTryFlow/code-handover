@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Check, Download, Folder, Key, Link, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
@@ -148,6 +148,7 @@ const cloning = ref(false)
 const cloneProgress = ref('')
 const clonePercentage = ref(0)
 const branchFetchError = ref('')
+let removeCloneProgressListener: (() => void) | undefined
 
 const goBack = () => router.push('/')
 
@@ -222,6 +223,41 @@ const handleFetchBranches = async () => {
   }
 }
 
+const formatCloneProgressMessage = (stage: string, percent: number) => {
+  switch (stage) {
+    case 'prepare':
+      return '正在准备本地目录...'
+    case 'attempt':
+      return '正在连接远程仓库...'
+    case 'receiving':
+      return `正在接收仓库对象... ${percent}%`
+    case 'resolving':
+      return `正在解析提交数据... ${percent}%`
+    case 'checkout':
+      return `正在写入工作区文件... ${percent}%`
+    case 'finalizing':
+      return '正在完成仓库校验...'
+    case 'retrying':
+      return '网络传输中断，正在清理并重试...'
+    default:
+      return '正在拉取仓库代码...'
+  }
+}
+
+const startCloneProgressListener = () => {
+  removeCloneProgressListener?.()
+  removeCloneProgressListener = electronAPI.onCloneProgress(progress => {
+    const nextPercent = Math.max(5, Math.min(100, Math.round(progress.percent)))
+    clonePercentage.value = Math.max(clonePercentage.value, nextPercent)
+    cloneProgress.value = formatCloneProgressMessage(progress.stage, clonePercentage.value)
+  })
+}
+
+const stopCloneProgressListener = () => {
+  removeCloneProgressListener?.()
+  removeCloneProgressListener = undefined
+}
+
 const handleCloneAndAnalyze = async () => {
   if (!form.value.repoUrl || !form.value.parentPath || !form.value.localPath) {
     ElMessage.warning('请填写完整的仓库信息')
@@ -233,8 +269,9 @@ const handleCloneAndAnalyze = async () => {
   clonePercentage.value = 15
 
   try {
+    startCloneProgressListener()
     cloneProgress.value = '正在拉取仓库代码...'
-    clonePercentage.value = 45
+    clonePercentage.value = 25
     const result = await electronAPI.cloneRepo(
       form.value.repoUrl,
       form.value.localPath,
@@ -245,6 +282,7 @@ const handleCloneAndAnalyze = async () => {
       throw new Error(result.error || '未知错误')
     }
 
+    cloneProgress.value = '仓库拉取完成，正在进入分析配置...'
     clonePercentage.value = 100
     ElMessage.success('仓库拉取成功')
 
@@ -260,11 +298,16 @@ const handleCloneAndAnalyze = async () => {
     ElMessage.error('拉取失败：' + (error as Error).message)
     console.error(error)
   } finally {
+    stopCloneProgressListener()
     cloning.value = false
     cloneProgress.value = ''
     clonePercentage.value = 0
   }
 }
+
+onUnmounted(() => {
+  stopCloneProgressListener()
+})
 </script>
 
 <style scoped>
