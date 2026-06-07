@@ -1,6 +1,6 @@
 {
   "name": "code-handover",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CodeHandover - Git项目交接文档生成工具",
   "author": "CodeHandover contributors",
   "license": "MIT",
